@@ -175,7 +175,7 @@ class CooperativeCachingEnv:
                 user_id = int(self.user_ids_for_ues[u])
                 ptr = int(self.user_ptrs[u])
                 contexts.append(self._make_context(user_id, ptr))
-                recent_items.append(int(self.user_histories[user_id][ptr]))
+                recent_items.append(int(self.user_histories[user_id][ptr - 1]))
             if contexts:
                 ctx = np.asarray(contexts, dtype=np.int64)
                 rec = np.asarray(recent_items, dtype=np.int64)
@@ -241,6 +241,47 @@ class CooperativeCachingEnv:
             features[b, 4 + self.embed_dim :] = cand_emb
         return features
 
+    def _build_candidate_features(self) -> np.ndarray:
+        B = self.cfg.n_sbs
+        Fp = self.cfg.fp
+        feat_dim = self.embed_dim + 4
+        features = np.zeros((B, Fp, feat_dim), dtype=np.float32)
+
+        for b in range(B):
+            valid = self.current_mask[b]
+            if not np.any(valid):
+                continue
+
+            cand_items = self.current_candidates[b, valid]
+            cand_scores = self.current_candidate_scores[b, valid].astype(np.float64)
+            score_denom = float(np.sum(np.maximum(cand_scores, 0.0))) + 1e-8
+
+            neigh = np.where(self.current_adjacency[b] > 0.0)[0]
+            neigh = neigh[neigh != b]
+            neigh_count = max(1, len(neigh))
+
+            cand_tensor = torch.as_tensor(cand_items, dtype=torch.long, device=self._device)
+            cand_emb = self._embed_weight[cand_tensor].detach().cpu().numpy()
+
+            valid_slots = np.where(valid)[0]
+            for emb_idx, (slot, item_id) in enumerate(zip(valid_slots, cand_items)):
+                item_id = int(item_id)
+                local_cached = float(item_id in self.cache_items[b])
+                neighbor_cached = 0.0
+                if len(neigh) > 0:
+                    neighbor_cached = float(
+                        sum(item_id in self.cache_items[int(n)] for n in neigh) / neigh_count
+                    )
+                global_pop = float(self.global_popularity[item_id])
+
+                features[b, slot, 0] = float(max(self.current_candidate_scores[b, slot], 0.0) / score_denom)
+                features[b, slot, 1] = local_cached
+                features[b, slot, 2] = neighbor_cached
+                features[b, slot, 3] = global_pop
+                features[b, slot, 4:] = cand_emb[emb_idx]
+
+        return features
+
     def _build_observation(self) -> dict[str, np.ndarray]:
         ue_pos = self.ue_positions[self.step_idx]
         sbs_pos = self._sbs_positions_at(self.step_idx)
@@ -248,8 +289,10 @@ class CooperativeCachingEnv:
         self._refresh_candidates(association)
         self.current_adjacency = self._adjacency_from_sbs(sbs_pos)
         node_features = self._build_node_features(association, sbs_pos)
+        candidate_features = self._build_candidate_features()
         return {
             "node_features": node_features,
+            "candidate_features": candidate_features,
             "adjacency": self.current_adjacency.copy(),
             "action_mask": self.current_mask.astype(np.float32).copy(),
             "association": association.astype(np.int64),
@@ -272,36 +315,142 @@ class CooperativeCachingEnv:
         self._initialize_caches()
         return self._build_observation()
 
+    def _replace_item(self, sbs_id: int, item_id: int) -> float:
+        if item_id <= 0:
+            return 0.0
+        if item_id in self.cache_items[sbs_id]:
+            return 0.0
+        evict_slot = int(np.argmin(self.cache_hits[sbs_id]))
+        self.cache_items[sbs_id, evict_slot] = item_id
+        self.cache_hits[sbs_id, evict_slot] = 0.0
+        return 1.0
+
     def _apply_actions(self, action_idx: np.ndarray) -> np.ndarray:
         self.cache_hits *= self.cfg.cache_hit_decay
         replaced_counts = np.zeros((self.cfg.n_sbs,), dtype=np.float64)
-        for b in range(self.cfg.n_sbs):
-            idx = int(action_idx[b])
-            idx = np.clip(idx, 0, self.cfg.fp - 1)
-            candidate_order = [idx]
-            ranked = np.argsort(self.current_candidate_scores[b])[::-1]
-            for j in ranked:
-                j = int(j)
-                if j == idx:
-                    continue
-                candidate_order.append(j)
+        action_idx = np.asarray(action_idx, dtype=np.int64)
+        if action_idx.ndim == 1:
+            action_idx = action_idx[:, None]
+        if action_idx.shape[0] != self.cfg.n_sbs:
+            raise ValueError(f"Expected first action dimension {self.cfg.n_sbs}, got {action_idx.shape}")
 
+        for b in range(self.cfg.n_sbs):
             applied = 0
-            for cand_idx in candidate_order:
+            seen: set[int] = set()
+            for raw_idx in action_idx[b]:
                 if applied >= self.cfg.replacements_per_step:
                     break
+                cand_idx = int(np.clip(raw_idx, 0, self.cfg.fp - 1))
+                if cand_idx in seen:
+                    continue
+                seen.add(cand_idx)
                 if not self.current_mask[b, cand_idx]:
                     continue
                 chosen = int(self.current_candidates[b, cand_idx])
-                if chosen <= 0:
+                replaced = self._replace_item(b, chosen)
+                replaced_counts[b] += replaced
+                applied += int(replaced > 0)
+        return replaced_counts
+
+    def candidate_indices_to_items(self, action_idx: np.ndarray, k: int) -> np.ndarray:
+        action_idx = np.asarray(action_idx, dtype=np.int64)
+        if action_idx.ndim == 1:
+            action_idx = action_idx[:, None]
+        if action_idx.shape[0] != self.cfg.n_sbs:
+            raise ValueError(f"Expected first action dimension {self.cfg.n_sbs}, got {action_idx.shape}")
+
+        out = np.zeros((self.cfg.n_sbs, k), dtype=np.int64)
+        for b in range(self.cfg.n_sbs):
+            insert = 0
+            seen: set[int] = set()
+            for raw_idx in action_idx[b]:
+                cand_idx = int(np.clip(raw_idx, 0, self.cfg.fp - 1))
+                if not self.current_mask[b, cand_idx]:
                     continue
-                if chosen in self.cache_items[b]:
+                item_id = int(self.current_candidates[b, cand_idx])
+                if item_id <= 0 or item_id in seen:
                     continue
-                evict_slot = int(np.argmin(self.cache_hits[b]))
-                self.cache_items[b, evict_slot] = chosen
-                self.cache_hits[b, evict_slot] = 0.0
-                replaced_counts[b] += 1.0
-                applied += 1
+                out[b, insert] = item_id
+                seen.add(item_id)
+                insert += 1
+                if insert >= k:
+                    break
+        return out
+
+    def _apply_item_actions(self, action_items: np.ndarray) -> np.ndarray:
+        self.cache_hits *= self.cfg.cache_hit_decay
+        replaced_counts = np.zeros((self.cfg.n_sbs,), dtype=np.float64)
+        action_items = np.asarray(action_items, dtype=np.int64)
+        if action_items.ndim == 1:
+            action_items = action_items[:, None]
+        if action_items.shape[0] != self.cfg.n_sbs:
+            raise ValueError(f"Expected first action dimension {self.cfg.n_sbs}, got {action_items.shape}")
+
+        for b in range(self.cfg.n_sbs):
+            applied = 0
+            seen: set[int] = set()
+            for raw_item in action_items[b]:
+                if applied >= self.cfg.replacements_per_step:
+                    break
+                item_id = int(raw_item)
+                if item_id in seen:
+                    continue
+                seen.add(item_id)
+                replaced = self._replace_item(b, item_id)
+                replaced_counts[b] += replaced
+                applied += int(replaced > 0)
+        return replaced_counts
+
+    def _set_full_cache_actions(self, cache_items: np.ndarray) -> np.ndarray:
+        self.cache_hits *= self.cfg.cache_hit_decay
+        replaced_counts = np.zeros((self.cfg.n_sbs,), dtype=np.float64)
+        cache_items = np.asarray(cache_items, dtype=np.int64)
+        if cache_items.ndim != 2 or cache_items.shape != (self.cfg.n_sbs, self.cfg.cache_capacity):
+            raise ValueError(
+                f"Expected cache action shape {(self.cfg.n_sbs, self.cfg.cache_capacity)}, got {cache_items.shape}"
+            )
+
+        for b in range(self.cfg.n_sbs):
+            old_items = self.cache_items[b].copy()
+            old_hits = self.cache_hits[b].copy()
+            new_cache = np.zeros((self.cfg.cache_capacity,), dtype=np.int64)
+
+            insert = 0
+            seen: set[int] = set()
+            for item_id in cache_items[b]:
+                item_id = int(item_id)
+                if item_id <= 0 or item_id in seen:
+                    continue
+                new_cache[insert] = item_id
+                seen.add(item_id)
+                insert += 1
+                if insert >= self.cfg.cache_capacity:
+                    break
+
+            if insert < self.cfg.cache_capacity:
+                fallback = np.argsort(self.global_popularity[1:])[-self.cfg.fp :][::-1] + 1
+                for item_id in fallback:
+                    item_id = int(item_id)
+                    if item_id in seen:
+                        continue
+                    new_cache[insert] = item_id
+                    seen.add(item_id)
+                    insert += 1
+                    if insert >= self.cfg.cache_capacity:
+                        break
+
+            new_hits = np.zeros_like(old_hits)
+            changed = 0.0
+            for slot, item_id in enumerate(new_cache):
+                matches = np.where(old_items == item_id)[0]
+                if matches.size > 0:
+                    new_hits[slot] = old_hits[int(matches[0])]
+                else:
+                    changed += 1.0
+
+            self.cache_items[b] = new_cache
+            self.cache_hits[b] = new_hits
+            replaced_counts[b] = changed
         return replaced_counts
 
     def _compute_reward(self, association: np.ndarray, replaced: np.ndarray) -> tuple[float, dict[str, float]]:
@@ -358,6 +507,7 @@ class CooperativeCachingEnv:
         self.last_hit_rate = local_hits / denom
         info = {
             "reward": reward,
+            "reward_per_sbs": reward_per_sbs.astype(np.float32).copy(),
             "local_hit_rate": float(np.sum(local_hits) / max(1.0, np.sum(totals))),
             "neighbor_fetch_rate": float(np.sum(neighbor_hits) / max(1.0, np.sum(totals))),
             "cloud_fetch_rate": float(np.sum(cloud_hits) / max(1.0, np.sum(totals))),
@@ -366,13 +516,39 @@ class CooperativeCachingEnv:
         return reward, info
 
     def step(self, action_idx: np.ndarray) -> tuple[dict[str, np.ndarray], float, bool, dict[str, float]]:
-        action_idx = np.asarray(action_idx, dtype=np.int64)
-        if action_idx.shape != (self.cfg.n_sbs,):
-            raise ValueError(f"Expected action shape ({self.cfg.n_sbs},), got {action_idx.shape}")
-
         obs_before = self._build_observation()
         association = obs_before["association"]
         replaced = self._apply_actions(action_idx)
+        reward, info = self._compute_reward(association, replaced)
+
+        self.step_idx += 1
+        done = self.step_idx >= self.cfg.episode_len
+        if done:
+            next_obs = obs_before
+        else:
+            next_obs = self._build_observation()
+        return next_obs, reward, done, info
+
+    def step_items(self, action_items: np.ndarray) -> tuple[dict[str, np.ndarray], float, bool, dict[str, float]]:
+        obs_before = self._build_observation()
+        association = obs_before["association"]
+        replaced = self._apply_item_actions(action_items)
+        reward, info = self._compute_reward(association, replaced)
+
+        self.step_idx += 1
+        done = self.step_idx >= self.cfg.episode_len
+        if done:
+            next_obs = obs_before
+        else:
+            next_obs = self._build_observation()
+        return next_obs, reward, done, info
+
+    def step_full_cache_items(
+        self, cache_items: np.ndarray
+    ) -> tuple[dict[str, np.ndarray], float, bool, dict[str, float]]:
+        obs_before = self._build_observation()
+        association = obs_before["association"]
+        replaced = self._set_full_cache_actions(cache_items)
         reward, info = self._compute_reward(association, replaced)
 
         self.step_idx += 1

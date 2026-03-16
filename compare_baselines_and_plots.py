@@ -98,6 +98,7 @@ def _valid_action_indices(mask_row: np.ndarray) -> np.ndarray:
 
 class BasePolicy:
     name = "base"
+    action_mode = "candidate_index"
 
     def reset(self, env: CooperativeCachingEnv) -> None:
         return
@@ -117,21 +118,26 @@ class BasePolicy:
 
 class RandomPolicy(BasePolicy):
     name = "Random"
+    action_mode = "full_cache_items"
 
-    def __init__(self, seed: int = 42) -> None:
+    def __init__(self, num_items: int, seed: int = 42) -> None:
+        self.num_items = num_items
         self.rng = np.random.default_rng(seed)
 
     def select_action(self, obs: dict[str, np.ndarray], env: CooperativeCachingEnv) -> np.ndarray:
-        mask = obs["action_mask"]
-        out = np.zeros((env.cfg.n_sbs,), dtype=np.int64)
+        out = np.zeros((env.cfg.n_sbs, env.cfg.cache_capacity), dtype=np.int64)
         for b in range(env.cfg.n_sbs):
-            valid = _valid_action_indices(mask[b])
-            out[b] = int(self.rng.choice(valid))
+            out[b] = self.rng.choice(
+                np.arange(1, self.num_items + 1, dtype=np.int64),
+                size=env.cfg.cache_capacity,
+                replace=False,
+            )
         return out
 
 
 class CEpsilonGreedyPolicy(BasePolicy):
     name = "C-epsilon-greedy"
+    action_mode = "full_cache_items"
 
     def __init__(self, num_items: int, epsilon: float = 0.1, seed: int = 42) -> None:
         self.num_items = num_items
@@ -144,16 +150,15 @@ class CEpsilonGreedyPolicy(BasePolicy):
 
     def select_action(self, obs: dict[str, np.ndarray], env: CooperativeCachingEnv) -> np.ndarray:
         assert self.counts is not None
-        out = np.zeros((env.cfg.n_sbs,), dtype=np.int64)
+        out = np.zeros((env.cfg.n_sbs, env.cfg.cache_capacity), dtype=np.int64)
+        universe = np.arange(1, self.num_items + 1, dtype=np.int64)
         for b in range(env.cfg.n_sbs):
-            mask = obs["action_mask"][b]
-            valid = _valid_action_indices(mask)
             if self.rng.random() < self.epsilon:
-                out[b] = int(self.rng.choice(valid))
+                out[b] = self.rng.choice(universe, size=env.cfg.cache_capacity, replace=False)
                 continue
-            cand_items = env.current_candidates[b, valid]
-            scores = self.counts[b, cand_items]
-            out[b] = int(valid[int(np.argmax(scores))])
+            scores = self.counts[b, 1:]
+            best = np.argsort(scores)[-env.cfg.cache_capacity :][::-1] + 1
+            out[b] = best.astype(np.int64)
         return out
 
     def update(self, obs: dict[str, np.ndarray], env: CooperativeCachingEnv, action: np.ndarray, demand: list[dict[int, int]]) -> None:
@@ -166,6 +171,7 @@ class CEpsilonGreedyPolicy(BasePolicy):
 
 class ThompsonPolicy(BasePolicy):
     name = "Thompson"
+    action_mode = "full_cache_items"
 
     def __init__(self, num_items: int, seed: int = 42) -> None:
         self.num_items = num_items
@@ -179,73 +185,90 @@ class ThompsonPolicy(BasePolicy):
 
     def select_action(self, obs: dict[str, np.ndarray], env: CooperativeCachingEnv) -> np.ndarray:
         assert self.alpha is not None and self.beta is not None
-        out = np.zeros((env.cfg.n_sbs,), dtype=np.int64)
+        out = np.zeros((env.cfg.n_sbs, env.cfg.cache_capacity), dtype=np.int64)
         for b in range(env.cfg.n_sbs):
-            valid = _valid_action_indices(obs["action_mask"][b])
-            cand_items = env.current_candidates[b, valid]
+            cand_items = np.arange(1, self.num_items + 1, dtype=np.int64)
             a = self.alpha[b, cand_items]
             bb = self.beta[b, cand_items]
             sampled = self.rng.beta(a, bb)
-            out[b] = int(valid[int(np.argmax(sampled))])
+            best = cand_items[np.argsort(sampled)[-env.cfg.cache_capacity :][::-1]]
+            out[b] = best.astype(np.int64)
         return out
 
     def update(self, obs: dict[str, np.ndarray], env: CooperativeCachingEnv, action: np.ndarray, demand: list[dict[int, int]]) -> None:
         assert self.alpha is not None and self.beta is not None
         for b in range(env.cfg.n_sbs):
             total = sum(demand[b].values())
-            idx = int(action[b])
-            idx = np.clip(idx, 0, env.cfg.fp - 1)
-            item = int(env.current_candidates[b, idx])
-            if item <= 0:
-                continue
-            hits = float(demand[b].get(item, 0))
-            misses = float(max(0, total - hits))
-            self.alpha[b, item] += hits
-            self.beta[b, item] += misses
+            for item in action[b]:
+                item = int(item)
+                if item <= 0:
+                    continue
+                hits = float(demand[b].get(item, 0))
+                misses = float(max(0, total - hits))
+                self.alpha[b, item] += hits
+                self.beta[b, item] += misses
 
 
 class BSGPolicy(BasePolicy):
     name = "BSG-like"
+    action_mode = "full_cache_items"
 
     def select_action(self, obs: dict[str, np.ndarray], env: CooperativeCachingEnv) -> np.ndarray:
-        out = np.zeros((env.cfg.n_sbs,), dtype=np.int64)
+        out = np.zeros((env.cfg.n_sbs, env.cfg.cache_capacity), dtype=np.int64)
+        best = np.argsort(env.global_popularity[1:])[-env.cfg.cache_capacity :][::-1] + 1
         for b in range(env.cfg.n_sbs):
-            valid = _valid_action_indices(obs["action_mask"][b])
-            cand_items = env.current_candidates[b, valid]
-            popularity = env.global_popularity[cand_items]
-            out[b] = int(valid[int(np.argmax(popularity))])
+            out[b] = best.astype(np.int64)
         return out
 
 
 class EFNRLPolicy(BasePolicy):
     name = "EFNRL-like"
+    action_mode = "full_cache_items"
 
     def select_action(self, obs: dict[str, np.ndarray], env: CooperativeCachingEnv) -> np.ndarray:
-        out = np.zeros((env.cfg.n_sbs,), dtype=np.int64)
+        out = np.zeros((env.cfg.n_sbs, env.cfg.cache_capacity), dtype=np.int64)
         for b in range(env.cfg.n_sbs):
             valid = _valid_action_indices(obs["action_mask"][b])
             scores = env.current_candidate_scores[b, valid]
-            out[b] = int(valid[int(np.argmax(scores))])
+            topk = min(env.cfg.cache_capacity, valid.shape[0])
+            order = valid[np.argsort(scores)[-topk :][::-1]]
+            out[b] = env.current_candidates[b, order].astype(np.int64)
         return out
 
 
 class GNNPolicy(BasePolicy):
     name = "GNN-ActorCritic"
+    action_mode = "full_cache_items"
 
-    def __init__(self, ckpt: Path, node_feat_dim: int, hidden_dim: int, fp: int, device: str = "cpu") -> None:
+    def __init__(
+        self,
+        ckpt: Path,
+        node_feat_dim: int,
+        candidate_feat_dim: int,
+        hidden_dim: int,
+        fp: int,
+        device: str = "cpu",
+    ) -> None:
         self.device = device
-        self.model = GNNActorCritic(node_feat_dim=node_feat_dim, hidden_dim=hidden_dim, fp=fp).to(device)
+        self.model = GNNActorCritic(
+            node_feat_dim=node_feat_dim,
+            candidate_feat_dim=candidate_feat_dim,
+            hidden_dim=hidden_dim,
+            fp=fp,
+        ).to(device)
         self.model.load_state_dict(torch.load(ckpt, map_location=device, weights_only=True))
         self.model.eval()
 
     @torch.no_grad()
     def select_action(self, obs: dict[str, np.ndarray], env: CooperativeCachingEnv) -> np.ndarray:
         node = torch.as_tensor(obs["node_features"], dtype=torch.float32, device=self.device)
+        cand = torch.as_tensor(obs["candidate_features"], dtype=torch.float32, device=self.device)
         adj = torch.as_tensor(obs["adjacency"], dtype=torch.float32, device=self.device)
         mask = torch.as_tensor(obs["action_mask"], dtype=torch.float32, device=self.device)
-        logits, _ = self.model(node, adj, mask)
-        action = torch.argmax(logits, dim=-1).detach().cpu().numpy().astype(np.int64)
-        return action
+        logits, _ = self.model(node, cand, adj, mask)
+        topk = min(env.cfg.cache_capacity, logits.shape[1])
+        action_idx = torch.topk(logits, k=topk, dim=-1).indices.detach().cpu().numpy().astype(np.int64)
+        return env.candidate_indices_to_items(action_idx, k=topk)
 
 
 @dataclass
@@ -297,7 +320,12 @@ def evaluate_policy(
         while not done:
             demand = _step_requests(env, obs["association"])
             action = policy.select_action(obs, env)
-            next_obs, reward, done, info = env.step(action)
+            if policy.action_mode == "item_id":
+                next_obs, reward, done, info = env.step_items(action)
+            elif policy.action_mode == "full_cache_items":
+                next_obs, reward, done, info = env.step_full_cache_items(action)
+            else:
+                next_obs, reward, done, info = env.step(action)
             policy.update(obs, env, action, demand)
 
             reward_sum += float(reward)
@@ -593,9 +621,10 @@ def main() -> None:
         probe_env = CooperativeCachingEnv(env_cfg, temporal_model, histories)
         probe_obs = probe_env.reset(seed=args.seed)
         node_feat_dim = int(probe_obs["node_features"].shape[1])
+        candidate_feat_dim = int(probe_obs["candidate_features"].shape[2])
 
         policies: list[BasePolicy] = [
-            RandomPolicy(seed=args.seed),
+            RandomPolicy(num_items=num_items, seed=args.seed),
             CEpsilonGreedyPolicy(num_items=num_items, epsilon=args.epsilon, seed=args.seed),
             ThompsonPolicy(num_items=num_items, seed=args.seed),
             BSGPolicy(),
@@ -603,6 +632,7 @@ def main() -> None:
             GNNPolicy(
                 ckpt=args.gnn_checkpoint,
                 node_feat_dim=node_feat_dim,
+                candidate_feat_dim=candidate_feat_dim,
                 hidden_dim=args.gnn_hidden_dim,
                 fp=args.fp,
                 device=args.device,
@@ -643,9 +673,11 @@ def main() -> None:
         probe_env = CooperativeCachingEnv(env_cfg, temporal_model, histories)
         probe_obs = probe_env.reset(seed=args.seed)
         node_feat_dim = int(probe_obs["node_features"].shape[1])
+        candidate_feat_dim = int(probe_obs["candidate_features"].shape[2])
         gnn = GNNPolicy(
             ckpt=args.gnn_checkpoint,
             node_feat_dim=node_feat_dim,
+            candidate_feat_dim=candidate_feat_dim,
             hidden_dim=args.gnn_hidden_dim,
             fp=args.fp,
             device=args.device,
@@ -684,9 +716,11 @@ def main() -> None:
             probe_env = CooperativeCachingEnv(env_cfg, temporal_model, histories)
             probe_obs = probe_env.reset(seed=args.seed)
             node_feat_dim = int(probe_obs["node_features"].shape[1])
+            candidate_feat_dim = int(probe_obs["candidate_features"].shape[2])
             gnn = GNNPolicy(
                 ckpt=args.gnn_checkpoint,
                 node_feat_dim=node_feat_dim,
+                candidate_feat_dim=candidate_feat_dim,
                 hidden_dim=args.gnn_hidden_dim,
                 fp=args.fp,
                 device=args.device,

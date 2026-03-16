@@ -1,0 +1,13 @@
+run: modified_cefmr
+episodes: 80
+reward_mean: 19379.375000
+reward_min: 17828.000000
+reward_max: 20722.000000
+local_hit_mean: 0.127491
+local_hit_min: 0.117697
+local_hit_max: 0.137303
+neighbor_fetch_mean: 0.088201
+cloud_fetch_mean: 0.784309
+paper_style_hit_mean(local+neighbor): 0.215691
+temporal_val_start: 7.433846
+temporal_val_end: 7.186184

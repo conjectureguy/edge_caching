@@ -221,17 +221,20 @@ def main() -> None:
     env = CooperativeCachingEnv(env_cfg, temporal_model, histories)
     init_obs = env.reset(seed=args.seed)
     node_feat_dim = int(init_obs["node_features"].shape[1])
+    candidate_feat_dim = int(init_obs["candidate_features"].shape[2])
     logger.info(
-        "Environment ready | n_sbs=%d n_ues=%d fp=%d cache_capacity=%d node_feat_dim=%d",
+        "Environment ready | n_sbs=%d n_ues=%d fp=%d cache_capacity=%d node_feat_dim=%d candidate_feat_dim=%d",
         args.n_sbs,
         args.n_ues,
         args.fp,
         args.cache_capacity,
         node_feat_dim,
+        candidate_feat_dim,
     )
 
     actor_critic = GNNActorCritic(
         node_feat_dim=node_feat_dim,
+        candidate_feat_dim=candidate_feat_dim,
         hidden_dim=args.ppo_hidden_dim,
         fp=args.fp,
     )
@@ -281,8 +284,12 @@ def main() -> None:
         print(f"Temporal val loss (last): {temporal_val_losses[-1]:.6f}")
     else:
         print("Temporal val loss (last): N/A (loaded from checkpoint)")
-    print(f"RL reward (last episode): {hist.episode_rewards[-1]:.6f}")
-    print(f"RL local hit-rate (last episode): {hist.episode_hit_rates[-1]:.6f}")
+    if hist.episode_rewards:
+        print(f"RL reward (last episode): {hist.episode_rewards[-1]:.6f}")
+        print(f"RL local hit-rate (last episode): {hist.episode_hit_rates[-1]:.6f}")
+    else:
+        print("RL reward (last episode): N/A")
+        print("RL local hit-rate (last episode): N/A")
     print(f"Saved temporal checkpoint: {temporal_ckpt}")
     print(f"Saved GNN checkpoint: {gnn_ckpt}")
     print(f"Saved metrics CSVs under: {args.output_dir}")
