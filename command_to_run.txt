@@ -1,0 +1,78 @@
+Final train + test command
+
+/home/rahul/miniforge3/bin/python train_novel_realworld_cache.py \
+  --dataset-name ml-1m \
+  --output-dir outputs/novel_realworld_ml1m_final \
+  --device cpu \
+  --window-size 12 \
+  --fed-rounds 12 \
+  --clients-per-round 80 \
+  --local-epochs 1 \
+  --temporal-batch-size 128 \
+  --temporal-lr 0.0008 \
+  --elastic-tau 2.0 \
+  --n-sbs 8 \
+  --n-ues 220 \
+  --cache-capacity 20 \
+  --fp 50 \
+  --episode-len 100 \
+  --policy-hidden-dim 160 \
+  --imitation-epochs 16 \
+  --episodes-per-epoch 8 \
+  --policy-lr 0.0002 \
+  --teacher-forcing-prob 0.9 \
+  --teacher-forcing-final-prob 0.1 \
+  --teacher-score-loss-weight 0.5 \
+  --label-smoothing 0.03 \
+  --eval-episodes 5 \
+  --log-level INFO
+What this does:
+
+loads ml-1m
+trains the timestamp-aware temporal encoder with elastic federated learning
+builds the mobility-aware real-world request environment
+trains the new TemporalGraph cache policy
+evaluates against:
+Random
+BSG-like
+C-epsilon-greedy
+Teacher
+TemporalGraph
+writes CSVs and summary.txt under outputs/novel_realworld_ml1m_final
+Plot command
+
+/home/rahul/miniforge3/bin/python plot_novel_realworld_results.py \
+  --input-dir outputs/novel_realworld_ml1m_final
+This generates:
+
+temporal_training.png
+policy_imitation.png
+baseline_comparison.png
+episode_curves.png
+If you want to skip retraining the temporal encoder
+Use an existing temporal checkpoint:
+
+/home/rahul/miniforge3/bin/python train_novel_realworld_cache.py \
+  --dataset-name ml-1m \
+  --temporal-checkpoint outputs/novel_realworld_ml1m_run/realworld_temporal_encoder.pt \
+  --output-dir outputs/novel_realworld_ml1m_final \
+  --device cpu \
+  --window-size 12 \
+  --n-sbs 8 \
+  --n-ues 220 \
+  --cache-capacity 20 \
+  --fp 50 \
+  --episode-len 100 \
+  --policy-hidden-dim 160 \
+  --imitation-epochs 16 \
+  --episodes-per-epoch 8 \
+  --policy-lr 0.0002 \
+  --teacher-forcing-prob 0.9 \
+  --teacher-forcing-final-prob 0.1 \
+  --teacher-score-loss-weight 0.5 \
+  --label-smoothing 0.03 \
+  --eval-episodes 5 \
+  --log-level INFO
+If you want, I can also give you one stricter multi-seed command sequence for paper-quality reporting.
+
+
