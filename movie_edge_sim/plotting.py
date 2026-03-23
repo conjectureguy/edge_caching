@@ -8,7 +8,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from movie_edge_sim.simulation import SimulationConfig, SimulationResult
+from movie_edge_sim.simulation import LatencyResult, SimulationConfig, SimulationResult
 
 
 def _pick_indices(n_total: int, max_count: int) -> np.ndarray:
@@ -54,6 +54,44 @@ def plot_trajectories(
     ax.grid(alpha=0.25, linestyle="--", linewidth=0.5)
 
     out_path = output_dir / "trajectories.png"
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=180)
+    plt.close(fig)
+    return out_path
+
+
+def plot_latency_comparison(
+    fixed_latency: LatencyResult,
+    moving_latency: LatencyResult,
+    output_dir: str | Path,
+) -> Path:
+    """Plot mean latency comparison for fixed-SBS vs moving-SBS scenarios."""
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    fig, ax = plt.subplots(figsize=(9, 4.8))
+
+    ax.plot(
+        fixed_latency.time_s,
+        fixed_latency.mean_latency_ms,
+        label="UE moving, SBS fixed",
+        color="#577590",
+        linewidth=2.0,
+    )
+    ax.plot(
+        moving_latency.time_s,
+        moving_latency.mean_latency_ms,
+        label="UE moving, SBS moving",
+        color="#d62828",
+        linewidth=2.0,
+    )
+    ax.set_title("Mean Latency Over Time")
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Latency (ms)")
+    ax.grid(alpha=0.25, linestyle="--", linewidth=0.5)
+    ax.legend()
+
+    out_path = output_dir / "latency_comparison.png"
     fig.tight_layout()
     fig.savefig(out_path, dpi=180)
     plt.close(fig)

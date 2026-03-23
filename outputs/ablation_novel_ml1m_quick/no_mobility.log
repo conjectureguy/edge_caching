@@ -1,0 +1,32 @@
+2026-03-17 03:38:46,442 | INFO | novel_realworld_cache | Stage 1/5: loading ml-1m
+2026-03-17 03:38:49,813 | INFO | novel_realworld_cache | Dataset ready | dataset=ml-1m ratings=1000209 users=6040
+2026-03-17 03:38:49,813 | INFO | novel_realworld_cache | Stage 2/5: skipping temporal dataset build because checkpoint was provided
+2026-03-17 03:38:49,813 | INFO | novel_realworld_cache | Stage 3/5: loading temporal checkpoint outputs/novel_realworld_ml1m_final/realworld_temporal_encoder.pt
+2026-03-17 03:38:49,985 | INFO | novel_realworld_cache | Stage 4/5: building novel real-world caching environment
+2026-03-17 03:38:53,797 | INFO | novel_realworld_cache | Environment ready | node_dim=137 candidate_dim=72
+2026-03-17 03:38:53,801 | INFO | novel_realworld_cache | Stage 5/5: training temporal-graph cooperative cache policy
+2026-03-17 03:39:39,192 | INFO | novel_realworld_cache | Imitation epoch 1/3 episode 2/2 complete | teacher_forcing=0.900 reward=2.4413 local_hit=0.0726 paper_hit=0.1449
+2026-03-17 03:39:39,199 | INFO | novel_realworld_cache | Imitation epoch 1/3 summary | loss=3.072957 reward=2.4413 local_hit=0.0726 paper_hit=0.1449 best_score=74.9546
+2026-03-17 03:40:29,448 | INFO | novel_realworld_cache | Imitation epoch 2/3 episode 2/2 complete | teacher_forcing=0.550 reward=2.9175 local_hit=0.1152 paper_hit=0.1535
+2026-03-17 03:40:29,523 | INFO | novel_realworld_cache | Imitation epoch 2/3 summary | loss=2.975471 reward=2.9175 local_hit=0.1152 paper_hit=0.1535 best_score=98.8762
+2026-03-17 03:41:20,153 | INFO | novel_realworld_cache | Imitation epoch 3/3 episode 2/2 complete | teacher_forcing=0.200 reward=2.5563 local_hit=0.0868 paper_hit=0.1082
+2026-03-17 03:41:20,153 | INFO | novel_realworld_cache | Imitation epoch 3/3 summary | loss=2.907069 reward=2.5563 local_hit=0.0868 paper_hit=0.1082 best_score=98.8762
+2026-03-17 03:41:20,181 | INFO | novel_realworld_cache | Evaluating random baseline
+2026-03-17 03:41:55,107 | INFO | novel_realworld_cache | Evaluating BSG-like baseline
+2026-03-17 03:42:40,526 | INFO | novel_realworld_cache | Evaluating C-epsilon-greedy baseline
+2026-03-17 03:43:13,190 | INFO | novel_realworld_cache | Evaluating cooperative teacher
+2026-03-17 03:43:49,731 | INFO | novel_realworld_cache | Evaluating learned graph policy
+2026-03-17 03:44:21,591 | INFO | novel_realworld_cache | Ablations: graph=on temporal=on mobility=off trend=on teacher_score_loss_weight=0.500 decode_diversity_penalty=0.350
+2026-03-17 03:44:21,591 | INFO | novel_realworld_cache | Random: reward_mean=-630.5500 local_hit_mean=0.0030 paper_hit_mean=0.0086
+2026-03-17 03:44:21,591 | INFO | novel_realworld_cache | BSG-like: reward_mean=25.1500 local_hit_mean=0.0337 paper_hit_mean=0.0337
+2026-03-17 03:44:21,591 | INFO | novel_realworld_cache | C-epsilon-greedy: reward_mean=-127.4500 local_hit_mean=0.0432 paper_hit_mean=0.0632
+2026-03-17 03:44:21,591 | INFO | novel_realworld_cache | Teacher: reward_mean=95.0500 local_hit_mean=0.0831 paper_hit_mean=0.1428
+2026-03-17 03:44:21,591 | INFO | novel_realworld_cache | TemporalGraph: reward_mean=105.4500 local_hit_mean=0.0859 paper_hit_mean=0.1072
+Ablations: graph=on temporal=on mobility=off trend=on teacher_score_loss_weight=0.500 decode_diversity_penalty=0.350
+Random: reward_mean=-630.5500 local_hit_mean=0.0030 paper_hit_mean=0.0086
+BSG-like: reward_mean=25.1500 local_hit_mean=0.0337 paper_hit_mean=0.0337
+C-epsilon-greedy: reward_mean=-127.4500 local_hit_mean=0.0432 paper_hit_mean=0.0632
+Teacher: reward_mean=95.0500 local_hit_mean=0.0831 paper_hit_mean=0.1428
+TemporalGraph: reward_mean=105.4500 local_hit_mean=0.0859 paper_hit_mean=0.1072
+Dataset: ml-1m
+Saved outputs under: outputs/ablation_novel_ml1m_quick/no_mobility

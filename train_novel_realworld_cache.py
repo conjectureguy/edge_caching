@@ -11,8 +11,10 @@ import torch
 from movie_edge_sim.data import get_movielens_dataset, load_ratings_auto
 from movie_edge_sim.novel_graph_policy import (
     ImitationConfig,
+    ReinforceConfig,
     TemporalGraphCooperativePolicy,
     evaluate_graph_cache_policy,
+    fine_tune_graph_cache_policy_reinforce,
     train_graph_cache_policy_imitation,
 )
 from movie_edge_sim.novel_realworld_env import NovelRealWorldCachingEnv, RealWorldEnvConfig
@@ -66,6 +68,20 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--teacher-forcing-final-prob", type=float, default=0.2)
     p.add_argument("--teacher-score-loss-weight", type=float, default=0.35)
     p.add_argument("--label-smoothing", type=float, default=0.05)
+    p.add_argument("--decode-diversity-penalty", type=float, default=0.35)
+    p.add_argument("--disable-graph", action="store_true")
+    p.add_argument("--disable-temporal", action="store_true")
+    p.add_argument("--disable-mobility", action="store_true")
+    p.add_argument("--disable-trend", action="store_true")
+    p.add_argument("--log-every-imitation-epoch", type=int, default=1)
+    p.add_argument("--log-every-imitation-episode", type=int, default=1)
+    p.add_argument("--reinforce-epochs", type=int, default=6)
+    p.add_argument("--reinforce-episodes-per-epoch", type=int, default=4)
+    p.add_argument("--reinforce-lr", type=float, default=1e-4)
+    p.add_argument("--reinforce-gamma", type=float, default=0.99)
+    p.add_argument("--reinforce-entropy-weight", type=float, default=1e-3)
+    p.add_argument("--log-every-reinforce-epoch", type=int, default=1)
+    p.add_argument("--log-every-reinforce-episode", type=int, default=1)
 
     p.add_argument("--eval-episodes", type=int, default=5)
     return p.parse_args()
@@ -77,7 +93,7 @@ def setup_logging(level_name: str) -> logging.Logger:
     return logging.getLogger("novel_realworld_cache")
 
 
-def save_history(out_dir: Path, temporal_round_losses: list[float], temporal_val_losses: list[float], imitation_hist) -> None:
+def save_history(out_dir: Path, temporal_round_losses: list[float], temporal_val_losses: list[float], imitation_hist, reinforce_hist=None) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     with (out_dir / "temporal_training.csv").open("w", newline="") as f:
         writer = csv.writer(f)
@@ -90,8 +106,17 @@ def save_history(out_dir: Path, temporal_round_losses: list[float], temporal_val
         for i, (loss, reward, local_hit, paper_hit) in enumerate(
             zip(imitation_hist.losses, imitation_hist.rewards, imitation_hist.local_hit_rates, imitation_hist.paper_hit_rates),
             start=1,
-        ):
+            ):
             writer.writerow([i, f"{loss:.8f}", f"{reward:.8f}", f"{local_hit:.8f}", f"{paper_hit:.8f}"])
+    if reinforce_hist is not None:
+        with (out_dir / "policy_reinforce.csv").open("w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["epoch", "loss", "reward", "local_hit_rate", "paper_hit_rate"])
+            for i, (loss, reward, local_hit, paper_hit) in enumerate(
+                zip(reinforce_hist.losses, reinforce_hist.rewards, reinforce_hist.local_hit_rates, reinforce_hist.paper_hit_rates),
+                start=1,
+            ):
+                writer.writerow([i, f"{loss:.8f}", f"{reward:.8f}", f"{local_hit:.8f}", f"{paper_hit:.8f}"])
 
 
 def save_eval(out_dir: Path, name: str, rows: list[dict[str, float]]) -> None:
@@ -199,7 +224,7 @@ def eval_c_epsilon_greedy(env: NovelRealWorldCachingEnv, episodes: int, seed: in
                 else:
                     best = np.argsort(counts[b, 1:])[-env.cfg.cache_capacity :][::-1] + 1
                     action[b] = best.astype(np.int64)
-            obs_before = env._build_observation()
+            obs_before = env.get_observation()
             association = obs_before["association"]
             _, reward, done, info = env.step_full_cache_items(action)
             for ue in range(env.cfg.n_ues):
@@ -277,21 +302,29 @@ def main() -> None:
     histories = build_user_time_histories(ratings)
     logger.info("Dataset ready | dataset=%s ratings=%d users=%d", args.dataset_name, len(ratings), len(histories))
 
-    logger.info("Stage 2/5: building real-world timestamp-aware temporal dataset")
-    temporal = build_realworld_temporal_dataset(histories, window_size=args.window_size)
-    train_idx, val_idx = chronological_train_val_split(temporal, val_ratio=args.val_ratio)
-    train_users = grouped_indices_by_user(temporal, train_idx)
-    logger.info(
-        "Temporal dataset ready | samples=%d train=%d val=%d",
-        temporal.context_items.shape[0],
-        train_idx.shape[0],
-        val_idx.shape[0],
-    )
+    temporal = None
+    train_idx = None
+    val_idx = None
+    train_users = None
+    if args.temporal_checkpoint is None:
+        logger.info("Stage 2/5: building real-world timestamp-aware temporal dataset")
+        temporal = build_realworld_temporal_dataset(histories, window_size=args.window_size)
+        train_idx, val_idx = chronological_train_val_split(temporal, val_ratio=args.val_ratio)
+        train_users = grouped_indices_by_user(temporal, train_idx)
+        logger.info(
+            "Temporal dataset ready | samples=%d train=%d val=%d",
+            temporal.context_items.shape[0],
+            train_idx.shape[0],
+            val_idx.shape[0],
+        )
+    else:
+        logger.info("Stage 2/5: skipping temporal dataset build because checkpoint was provided")
 
     temporal_round_losses: list[float] = []
     temporal_val_losses: list[float] = []
     if args.temporal_checkpoint is None:
         logger.info("Stage 3/5: elastic federated training for real-world temporal encoder")
+        assert temporal is not None and train_users is not None and val_idx is not None
         fed_cfg = FederatedConfig(
             rounds=args.fed_rounds,
             clients_per_round=args.clients_per_round,
@@ -317,10 +350,12 @@ def main() -> None:
         temporal_val_losses = result.val_losses
     else:
         logger.info("Stage 3/5: loading temporal checkpoint %s", args.temporal_checkpoint)
+        max_user_id = max(histories.keys())
+        max_item_id = max(max(hist.items) for hist in histories.values())
         temporal_model = RealWorldTemporalEncoder(
-            num_items=temporal.num_items,
-            num_users=temporal.num_users,
-            window_size=temporal.window_size,
+            num_items=max_item_id,
+            num_users=max_user_id,
+            window_size=args.window_size,
             embed_dim=args.embed_dim,
             hidden_dim=args.hidden_dim,
             num_heads=args.num_heads,
@@ -338,6 +373,9 @@ def main() -> None:
         window_size=args.window_size,
         episode_len=args.episode_len,
         grid_size=args.grid_size,
+        use_temporal_features=not args.disable_temporal,
+        use_mobility_features=not args.disable_mobility,
+        use_trend_features=not args.disable_trend,
         seed=args.seed,
     )
     env = NovelRealWorldCachingEnv(env_cfg, temporal_model, histories)
@@ -347,7 +385,13 @@ def main() -> None:
     logger.info("Environment ready | node_dim=%d candidate_dim=%d", node_dim, cand_dim)
 
     logger.info("Stage 5/5: training temporal-graph cooperative cache policy")
-    policy = TemporalGraphCooperativePolicy(node_feat_dim=node_dim, candidate_feat_dim=cand_dim, hidden_dim=args.policy_hidden_dim, fp=args.fp)
+    policy = TemporalGraphCooperativePolicy(
+        node_feat_dim=node_dim,
+        candidate_feat_dim=cand_dim,
+        hidden_dim=args.policy_hidden_dim,
+        fp=args.fp,
+        use_graph=not args.disable_graph,
+    )
     imit_cfg = ImitationConfig(
         epochs=args.imitation_epochs,
         episodes_per_epoch=args.episodes_per_epoch,
@@ -357,13 +401,43 @@ def main() -> None:
         teacher_forcing_final_prob=args.teacher_forcing_final_prob,
         teacher_score_loss_weight=args.teacher_score_loss_weight,
         label_smoothing=args.label_smoothing,
+        decode_diversity_penalty=args.decode_diversity_penalty,
     )
-    imitation_hist = train_graph_cache_policy_imitation(env, policy, imit_cfg, seed=args.seed)
+    imitation_hist = train_graph_cache_policy_imitation(
+        env,
+        policy,
+        imit_cfg,
+        seed=args.seed,
+        logger=logger,
+        log_every_epoch=args.log_every_imitation_epoch,
+        log_every_episode=args.log_every_imitation_episode,
+    )
+    reinforce_hist = None
+    if args.reinforce_epochs > 0:
+        logger.info("Stage 5b/5: reward fine-tuning temporal-graph policy")
+        reinforce_cfg = ReinforceConfig(
+            epochs=args.reinforce_epochs,
+            episodes_per_epoch=args.reinforce_episodes_per_epoch,
+            lr=args.reinforce_lr,
+            gamma=args.reinforce_gamma,
+            entropy_weight=args.reinforce_entropy_weight,
+            device=args.device,
+            decode_diversity_penalty=args.decode_diversity_penalty,
+        )
+        reinforce_hist = fine_tune_graph_cache_policy_reinforce(
+            env,
+            policy,
+            reinforce_cfg,
+            seed=args.seed,
+            logger=logger,
+            log_every_epoch=args.log_every_reinforce_epoch,
+            log_every_episode=args.log_every_reinforce_episode,
+        )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     torch.save(temporal_model.state_dict(), args.output_dir / "realworld_temporal_encoder.pt")
     torch.save(policy.state_dict(), args.output_dir / "temporal_graph_policy.pt")
-    save_history(args.output_dir, temporal_round_losses, temporal_val_losses, imitation_hist)
+    save_history(args.output_dir, temporal_round_losses, temporal_val_losses, imitation_hist, reinforce_hist)
 
     logger.info("Evaluating random baseline")
     random_rows = eval_random(env, args.eval_episodes, seed=args.seed + 1000)
@@ -374,7 +448,14 @@ def main() -> None:
     logger.info("Evaluating cooperative teacher")
     teacher_rows = eval_teacher(env, args.eval_episodes, seed=args.seed + 2000)
     logger.info("Evaluating learned graph policy")
-    learned_rows = evaluate_graph_cache_policy(env, policy, args.eval_episodes, seed=args.seed + 3000, device=args.device)
+    learned_rows = evaluate_graph_cache_policy(
+        env,
+        policy,
+        args.eval_episodes,
+        seed=args.seed + 3000,
+        device=args.device,
+        decode_diversity_penalty=args.decode_diversity_penalty,
+    )
     save_eval(args.output_dir, "random", random_rows)
     save_eval(args.output_dir, "bsg_like", bsg_rows)
     save_eval(args.output_dir, "c_epsilon_greedy", c_eps_rows)
@@ -382,6 +463,8 @@ def main() -> None:
     save_eval(args.output_dir, "temporal_graph", learned_rows)
 
     summary_lines = [
+        f"Ablations: graph={'off' if args.disable_graph else 'on'} temporal={'off' if args.disable_temporal else 'on'} mobility={'off' if args.disable_mobility else 'on'} trend={'off' if args.disable_trend else 'on'} teacher_score_loss_weight={args.teacher_score_loss_weight:.3f} decode_diversity_penalty={args.decode_diversity_penalty:.3f}",
+        f"Reinforce: epochs={args.reinforce_epochs} episodes_per_epoch={args.reinforce_episodes_per_epoch} lr={args.reinforce_lr:.6f} gamma={args.reinforce_gamma:.3f} entropy_weight={args.reinforce_entropy_weight:.6f}",
         summarize("Random", random_rows),
         summarize("BSG-like", bsg_rows),
         summarize("C-epsilon-greedy", c_eps_rows),

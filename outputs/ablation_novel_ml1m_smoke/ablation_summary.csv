@@ -1,0 +1,7 @@
+variant,graph,temporal,mobility,trend,teacher_score_loss_weight,decode_diversity_penalty,reward_mean,local_hit_mean,paper_hit_mean
+full,on,on,on,on,0.500,0.350,24.3000,0.1701,0.1701
+no_graph,off,on,on,on,0.500,0.350,24.2000,0.1701,0.1701
+no_mobility,on,on,off,on,0.500,0.350,24.3000,0.1701,0.1701
+no_score_distill,on,on,on,on,0.000,0.350,24.2000,0.1701,0.1701
+no_temporal,on,off,on,on,0.500,0.350,43.5000,0.3101,0.3844
+no_trend,on,on,on,off,0.500,0.350,0.5000,0.0333,0.0333

@@ -23,6 +23,17 @@ def read_csv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(f))
 
 
+def available_eval_specs(input_dir: Path) -> list[tuple[str, str, str]]:
+    specs = [
+        ("random_eval.csv", "Random", "#8d99ae"),
+        ("bsg_like_eval.csv", "BSG-like", "#577590"),
+        ("c_epsilon_greedy_eval.csv", "C-epsilon-greedy", "#90be6d"),
+        ("teacher_eval.csv", "Teacher", "#f8961e"),
+        ("temporal_graph_eval.csv", "TemporalGraph", "#d62828"),
+    ]
+    return [spec for spec in specs if (input_dir / spec[0]).exists()]
+
+
 def maybe_plot_temporal_training(input_dir: Path, output_dir: Path) -> None:
     path = input_dir / "temporal_training.csv"
     if not path.exists():
@@ -79,14 +90,10 @@ def maybe_plot_policy_imitation(input_dir: Path, output_dir: Path) -> None:
     plt.close(fig)
 
 
-def plot_eval_bars(input_dir: Path, output_dir: Path) -> None:
-    eval_files = [
-        ("random_eval.csv", "Random"),
-        ("bsg_like_eval.csv", "BSG-like"),
-        ("c_epsilon_greedy_eval.csv", "C-epsilon-greedy"),
-        ("teacher_eval.csv", "Teacher"),
-        ("temporal_graph_eval.csv", "TemporalGraph"),
-    ]
+def plot_eval_bars(input_dir: Path, output_dir: Path, include_teacher: bool = True) -> None:
+    eval_files = [(filename, label) for filename, label, _ in available_eval_specs(input_dir)]
+    if not include_teacher:
+        eval_files = [(filename, label) for filename, label in eval_files if label != "Teacher"]
     summary = []
     for filename, label in eval_files:
         path = input_dir / filename
@@ -129,18 +136,15 @@ def plot_eval_bars(input_dir: Path, output_dir: Path) -> None:
     axes[2].grid(axis="y", alpha=0.25)
 
     plt.tight_layout()
-    plt.savefig(output_dir / "baseline_comparison.png", dpi=180)
+    suffix = "" if include_teacher else "_no_teacher"
+    plt.savefig(output_dir / f"baseline_comparison{suffix}.png", dpi=180)
     plt.close(fig)
 
 
-def plot_eval_episode_curves(input_dir: Path, output_dir: Path) -> None:
-    eval_files = [
-        ("random_eval.csv", "Random", "#8d99ae"),
-        ("bsg_like_eval.csv", "BSG-like", "#577590"),
-        ("c_epsilon_greedy_eval.csv", "C-epsilon-greedy", "#90be6d"),
-        ("teacher_eval.csv", "Teacher", "#f8961e"),
-        ("temporal_graph_eval.csv", "TemporalGraph", "#d62828"),
-    ]
+def plot_eval_episode_curves(input_dir: Path, output_dir: Path, include_teacher: bool = True) -> None:
+    eval_files = available_eval_specs(input_dir)
+    if not include_teacher:
+        eval_files = [spec for spec in eval_files if spec[1] != "Teacher"]
     available = []
     for filename, label, color in eval_files:
         path = input_dir / filename
@@ -167,7 +171,8 @@ def plot_eval_episode_curves(input_dir: Path, output_dir: Path) -> None:
     axes[1].legend()
 
     plt.tight_layout()
-    plt.savefig(output_dir / "episode_curves.png", dpi=180)
+    suffix = "" if include_teacher else "_no_teacher"
+    plt.savefig(output_dir / f"episode_curves{suffix}.png", dpi=180)
     plt.close(fig)
 
 
@@ -177,8 +182,10 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     maybe_plot_temporal_training(args.input_dir, output_dir)
     maybe_plot_policy_imitation(args.input_dir, output_dir)
-    plot_eval_bars(args.input_dir, output_dir)
-    plot_eval_episode_curves(args.input_dir, output_dir)
+    plot_eval_bars(args.input_dir, output_dir, include_teacher=True)
+    plot_eval_bars(args.input_dir, output_dir, include_teacher=False)
+    plot_eval_episode_curves(args.input_dir, output_dir, include_teacher=True)
+    plot_eval_episode_curves(args.input_dir, output_dir, include_teacher=False)
     print(f"Saved plots under: {output_dir}")
 
 

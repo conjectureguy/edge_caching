@@ -36,6 +36,9 @@ class RealWorldEnvConfig:
     trend_decay: float = 0.85
     teacher_diversity_penalty: float = 0.45
     teacher_locality_bonus: float = 1.1
+    use_temporal_features: bool = True
+    use_mobility_features: bool = True
+    use_trend_features: bool = True
     seed: int = 42
 
 
@@ -75,6 +78,8 @@ class NovelRealWorldCachingEnv:
         self.current_candidates = np.zeros((cfg.n_sbs, cfg.fp), dtype=np.int64)
         self.current_candidate_scores = np.zeros((cfg.n_sbs, cfg.fp), dtype=np.float64)
         self.current_mask = np.zeros((cfg.n_sbs, cfg.fp), dtype=bool)
+        self.current_neighbor_support = np.zeros((cfg.n_sbs, cfg.fp), dtype=np.float64)
+        self.current_neighbor_shortage = np.zeros((cfg.n_sbs, cfg.fp), dtype=np.float64)
         self.current_trend_items = np.zeros((cfg.n_sbs,), dtype=np.int64)
         self.current_trend_strength = np.zeros((cfg.n_sbs,), dtype=np.float64)
         self.current_future_load = np.zeros((cfg.n_sbs,), dtype=np.float64)
@@ -86,6 +91,8 @@ class NovelRealWorldCachingEnv:
         self.ue_last_hour = np.zeros((cfg.n_ues,), dtype=np.int64)
         self.last_requests = np.zeros((cfg.n_ues,), dtype=np.int64)
         self.last_active_mask = np.zeros((cfg.n_ues,), dtype=bool)
+        self._cached_obs: dict[str, np.ndarray] | None = None
+        self._cached_temporal_probs: np.ndarray | None = None
 
     def _build_global_popularity(self) -> np.ndarray:
         popularity = np.zeros((self.num_items + 1,), dtype=np.float64)
@@ -157,6 +164,16 @@ class NovelRealWorldCachingEnv:
         return adj
 
     def _future_state(self) -> tuple[np.ndarray, np.ndarray]:
+        if not self.cfg.use_mobility_features:
+            current_sbs = self._sbs_positions_at(self.step_idx)
+            current_ue = self.ue_positions[self.step_idx]
+            current_assoc = self._associate_ues(current_ue, current_sbs)
+            self.current_future_load = np.asarray(
+                [float(np.mean(current_assoc == b)) for b in range(self.cfg.n_sbs)],
+                dtype=np.float64,
+            )
+            self.current_sbs_velocity.fill(0.0)
+            return current_sbs, current_assoc
         next_step = min(self.step_idx + 1, self.ue_positions.shape[0] - 1)
         next_ue = self.ue_positions[next_step]
         next_sbs = self._sbs_positions_at(next_step)
@@ -180,6 +197,7 @@ class NovelRealWorldCachingEnv:
         self.current_trend_strength.fill(0.0)
         self.last_requests.fill(0)
         self.last_active_mask.fill(False)
+        self._cached_temporal_probs = None
 
         for ue, user_id in enumerate(self.user_ids_for_ues.tolist()):
             hist = self.histories[int(user_id)]
@@ -197,20 +215,27 @@ class NovelRealWorldCachingEnv:
 
         obs = self._build_observation()
         self.cache_items[:] = self.cooperative_teacher_action()
-        return self._build_observation()
+        self._cached_obs = self._build_observation()
+        return self._cached_obs
 
     @torch.no_grad()
     def _temporal_probs_for_ues(self, ue_indices: np.ndarray) -> np.ndarray:
-        if ue_indices.size == 0:
+        if ue_indices.size == 0 or not self.cfg.use_temporal_features:
             return np.zeros((0, self.num_items + 1), dtype=np.float64)
-        items = torch.as_tensor(self.ue_context_items[ue_indices], dtype=torch.long, device=self._device)
-        deltas = torch.as_tensor(self.ue_context_deltas[ue_indices], dtype=torch.float32, device=self._device)
-        hours = torch.as_tensor(self.ue_context_hours[ue_indices], dtype=torch.long, device=self._device)
-        users = torch.as_tensor(self.user_ids_for_ues[ue_indices], dtype=torch.long, device=self._device)
-        probs = self.temporal_model.predict_scores(items, deltas, hours, users)
-        return probs.detach().cpu().numpy().astype(np.float64)
+        if self._cached_temporal_probs is None:
+            items = torch.as_tensor(self.ue_context_items, dtype=torch.long, device=self._device)
+            deltas = torch.as_tensor(self.ue_context_deltas, dtype=torch.float32, device=self._device)
+            hours = torch.as_tensor(self.ue_context_hours, dtype=torch.long, device=self._device)
+            users = torch.as_tensor(self.user_ids_for_ues, dtype=torch.long, device=self._device)
+            probs = self.temporal_model.predict_scores(items, deltas, hours, users)
+            self._cached_temporal_probs = probs.detach().cpu().numpy().astype(np.float64)
+        return self._cached_temporal_probs[ue_indices]
 
     def _refresh_trends(self, association: np.ndarray) -> None:
+        if not self.cfg.use_trend_features:
+            self.current_trend_items.fill(0)
+            self.current_trend_strength.fill(0.0)
+            return
         self.current_trend_strength *= self.cfg.trend_decay
         if self.step_idx % max(1, self.cfg.trend_refresh_steps) != 0:
             return
@@ -243,13 +268,16 @@ class NovelRealWorldCachingEnv:
             if self.rng.random() > act_p:
                 continue
             active[ue] = True
-            base = probs[ue].copy()
-            base[0] = 0.0
+            if self.cfg.use_temporal_features:
+                base = probs[ue].copy()
+                base[0] = 0.0
+            else:
+                base = np.zeros((self.num_items + 1,), dtype=np.float64)
             recency = np.bincount(self.ue_context_items[ue], minlength=self.num_items + 1).astype(np.float64)
             recency /= max(recency.sum(), 1.0)
             trend = np.zeros((self.num_items + 1,), dtype=np.float64)
             trend_item = int(self.current_trend_items[int(association[ue])])
-            if trend_item > 0:
+            if self.cfg.use_trend_features and trend_item > 0:
                 trend[trend_item] = float(self.current_trend_strength[int(association[ue])])
             mix = (
                 self.cfg.temporal_weight * base
@@ -286,7 +314,17 @@ class NovelRealWorldCachingEnv:
             future_ue_idx = np.where(future_association == b)[0]
             probs = self._temporal_probs_for_ues(ue_idx)
             future_probs = self._temporal_probs_for_ues(future_ue_idx)
-            if probs.shape[0] == 0:
+            if probs.shape[0] == 0 and not self.cfg.use_temporal_features:
+                active_recent = np.bincount(self.ue_context_items[ue_idx, -1], minlength=self.num_items + 1).astype(np.float64)
+                active_recent /= max(active_recent.sum(), 1.0)
+                trend = np.zeros((self.num_items + 1,), dtype=np.float64)
+                trend_item = int(self.current_trend_items[b])
+                if self.cfg.use_trend_features and trend_item > 0:
+                    trend[trend_item] = float(self.current_trend_strength[b])
+                score = 0.70 * active_recent + 0.20 * self.global_popularity + 0.10 * trend
+                top = np.argsort(score[1:])[-self.cfg.fp :][::-1] + 1
+                scores = score[top]
+            elif probs.shape[0] == 0:
                 top = np.argsort(self.global_popularity[1:])[-self.cfg.fp :][::-1] + 1
                 scores = self.global_popularity[top]
             else:
@@ -295,19 +333,19 @@ class NovelRealWorldCachingEnv:
                 active_recent = np.bincount(self.ue_context_items[ue_idx, -1], minlength=self.num_items + 1).astype(np.float64)
                 active_recent /= max(active_recent.sum(), 1.0)
                 future_agg = np.zeros((self.num_items + 1,), dtype=np.float64)
-                if future_probs.shape[0] > 0:
+                if self.cfg.use_mobility_features and future_probs.shape[0] > 0:
                     future_agg = future_probs.sum(axis=0)
                     future_agg[0] = 0.0
                 trend = np.zeros((self.num_items + 1,), dtype=np.float64)
                 trend_item = int(self.current_trend_items[b])
-                if trend_item > 0:
+                if self.cfg.use_trend_features and trend_item > 0:
                     trend[trend_item] = float(self.current_trend_strength[b])
                 score = (
                     0.50 * agg
                     + 0.20 * active_recent
-                    + 0.15 * future_agg
+                    + (0.15 * future_agg if self.cfg.use_mobility_features else 0.0)
                     + 0.10 * self.global_popularity
-                    + 0.05 * trend
+                    + (0.05 * trend if self.cfg.use_trend_features else 0.0)
                 )
                 top = np.argsort(score[1:])[-self.cfg.fp :][::-1] + 1
                 scores = score[top]
@@ -325,10 +363,10 @@ class NovelRealWorldCachingEnv:
             pos = sbs_positions[b] / self.cfg.grid_size
             ue_frac = float(np.sum(association == b) / max(1, self.cfg.n_ues))
             hit = float(self.last_hit_rate[b])
-            trend_strength = float(self.current_trend_strength[b])
+            trend_strength = float(self.current_trend_strength[b]) if self.cfg.use_trend_features else 0.0
             hour = float((self.step_idx % 24) / 24.0)
-            sbs_vel = self.current_sbs_velocity[b] / max(1.0, self.cfg.grid_size)
-            future_load = float(self.current_future_load[b])
+            sbs_vel = self.current_sbs_velocity[b] / max(1.0, self.cfg.grid_size) if self.cfg.use_mobility_features else 0.0
+            future_load = float(self.current_future_load[b]) if self.cfg.use_mobility_features else 0.0
             cand_mask = self.current_mask[b]
             if np.any(cand_mask):
                 cand_items = torch.as_tensor(self.current_candidates[b, cand_mask], dtype=torch.long, device=self._device)
@@ -349,8 +387,10 @@ class NovelRealWorldCachingEnv:
         return features
 
     def _build_candidate_features(self) -> np.ndarray:
-        feat_dim = self.embed_dim + 6
+        feat_dim = self.embed_dim + 8
         features = np.zeros((self.cfg.n_sbs, self.cfg.fp, feat_dim), dtype=np.float32)
+        self.current_neighbor_support.fill(0.0)
+        self.current_neighbor_shortage.fill(0.0)
         for b in range(self.cfg.n_sbs):
             neigh = np.where(self.current_adjacency[b] > 0.0)[0]
             neigh = neigh[neigh != b]
@@ -364,13 +404,31 @@ class NovelRealWorldCachingEnv:
             item_emb = self._embed_weight[torch.as_tensor(item_ids, dtype=torch.long, device=self._device)].detach().cpu().numpy()
             for idx, slot in enumerate(valid_slots):
                 item = int(item_ids[idx])
+                neighbor_support = 0.0
+                for n in neigh:
+                    n_slots = np.where(self.current_candidates[int(n)] == item)[0]
+                    if n_slots.size == 0:
+                        continue
+                    n_slot = int(n_slots[0])
+                    neighbor_support += float(self.current_candidate_scores[int(n), n_slot])
+                neighbor_support /= float(neigh_count)
+                neighbor_overlap = float(sum(item in self.cache_items[int(n)] for n in neigh) / neigh_count)
+                shortage = neighbor_support * max(0.0, 1.0 - neighbor_overlap)
+                self.current_neighbor_support[b, slot] = neighbor_support
+                self.current_neighbor_shortage[b, slot] = shortage
                 features[b, slot, 0] = float(score_norm[idx])
                 features[b, slot, 1] = float(item in self.cache_items[b])
-                features[b, slot, 2] = float(sum(item in self.cache_items[int(n)] for n in neigh) / neigh_count)
+                features[b, slot, 2] = neighbor_overlap
                 features[b, slot, 3] = float(self.global_popularity[item])
-                features[b, slot, 4] = float(item == int(self.current_trend_items[b])) * float(self.current_trend_strength[b])
-                features[b, slot, 5] = float(self.current_future_load[b])
-                features[b, slot, 6:] = item_emb[idx]
+                features[b, slot, 4] = (
+                    float(item == int(self.current_trend_items[b])) * float(self.current_trend_strength[b])
+                    if self.cfg.use_trend_features
+                    else 0.0
+                )
+                features[b, slot, 5] = float(self.current_future_load[b]) if self.cfg.use_mobility_features else 0.0
+                features[b, slot, 6] = float(neighbor_support)
+                features[b, slot, 7] = float(shortage)
+                features[b, slot, 8:] = item_emb[idx]
         return features
 
     def _build_observation(self) -> dict[str, np.ndarray]:
@@ -389,53 +447,14 @@ class NovelRealWorldCachingEnv:
             "association": association.copy(),
         }
 
-    def cooperative_teacher_action(self) -> np.ndarray:
-        actions = np.zeros((self.cfg.n_sbs, self.cfg.cache_capacity), dtype=np.int64)
-        planned: list[set[int]] = [set() for _ in range(self.cfg.n_sbs)]
-        order = np.argsort(self.current_candidate_scores.sum(axis=1))[::-1]
-        for b in order.tolist():
-            neigh = np.where(self.current_adjacency[b] > 0.0)[0]
-            neigh = neigh[neigh != b]
-            values = []
-            for slot in np.where(self.current_mask[b])[0].tolist():
-                item = int(self.current_candidates[b, slot])
-                local_score = float(self.current_candidate_scores[b, slot])
-                overlap = sum(item in planned[int(n)] for n in neigh)
-                in_cache = float(item in self.cache_items[b])
-                trend_bonus = float(item == int(self.current_trend_items[b])) * float(self.current_trend_strength[b])
-                score = (
-                    self.cfg.teacher_locality_bonus * local_score
-                    + 0.15 * float(self.global_popularity[item])
-                    + 0.20 * trend_bonus
-                    - self.cfg.teacher_diversity_penalty * float(overlap)
-                    + 0.20 * in_cache
-                )
-                values.append((score, item))
-            values.sort(key=lambda x: x[0], reverse=True)
-            chosen: list[int] = []
-            seen: set[int] = set()
-            for _, item in values:
-                if item <= 0 or item in seen:
-                    continue
-                chosen.append(item)
-                seen.add(item)
-                if len(chosen) >= self.cfg.cache_capacity:
-                    break
-            if len(chosen) < self.cfg.cache_capacity:
-                fallback = np.argsort(self.global_popularity[1:])[-self.cfg.cache_capacity :][::-1] + 1
-                for item in fallback.tolist():
-                    if item in seen:
-                        continue
-                    chosen.append(int(item))
-                    seen.add(int(item))
-                    if len(chosen) >= self.cfg.cache_capacity:
-                        break
-            actions[b] = np.asarray(chosen[: self.cfg.cache_capacity], dtype=np.int64)
-            planned[b] = set(actions[b].tolist())
-        return actions
+    def get_observation(self) -> dict[str, np.ndarray]:
+        if self._cached_obs is None:
+            self._cached_obs = self._build_observation()
+        return self._cached_obs
 
-    def cooperative_teacher_scores(self) -> np.ndarray:
+    def _teacher_scores_and_actions(self) -> tuple[np.ndarray, np.ndarray]:
         scores = np.full((self.cfg.n_sbs, self.cfg.fp), -1e9, dtype=np.float32)
+        actions = np.zeros((self.cfg.n_sbs, self.cfg.cache_capacity), dtype=np.int64)
         planned: list[set[int]] = [set() for _ in range(self.cfg.n_sbs)]
         order = np.argsort(self.current_candidate_scores.sum(axis=1))[::-1]
         for b in order.tolist():
@@ -455,6 +474,7 @@ class NovelRealWorldCachingEnv:
                     + 0.20 * in_cache
                 )
                 scores[b, slot] = float(score)
+
             ranked = np.argsort(scores[b])[::-1]
             chosen = []
             seen: set[int] = set()
@@ -466,7 +486,25 @@ class NovelRealWorldCachingEnv:
                 seen.add(item)
                 if len(chosen) >= self.cfg.cache_capacity:
                     break
-            planned[b] = set(chosen)
+            if len(chosen) < self.cfg.cache_capacity:
+                fallback = np.argsort(self.global_popularity[1:])[-self.cfg.cache_capacity :][::-1] + 1
+                for item in fallback.tolist():
+                    if item in seen:
+                        continue
+                    chosen.append(int(item))
+                    seen.add(int(item))
+                    if len(chosen) >= self.cfg.cache_capacity:
+                        break
+            actions[b] = np.asarray(chosen[: self.cfg.cache_capacity], dtype=np.int64)
+            planned[b] = set(actions[b].tolist())
+        return scores, actions
+
+    def cooperative_teacher_action(self) -> np.ndarray:
+        _, actions = self._teacher_scores_and_actions()
+        return actions
+
+    def cooperative_teacher_scores(self) -> np.ndarray:
+        scores, _ = self._teacher_scores_and_actions()
         return scores
 
     def candidate_items_to_slot_mask(self, chosen_items: np.ndarray) -> np.ndarray:
@@ -508,7 +546,7 @@ class NovelRealWorldCachingEnv:
         return replaced
 
     def step_full_cache_items(self, cache_items: np.ndarray) -> tuple[dict[str, np.ndarray], float, bool, dict[str, float]]:
-        obs_before = self._build_observation()
+        obs_before = self.get_observation()
         association = obs_before["association"]
         replaced = self._set_cache(cache_items)
         requests, active = self._sample_requests(association)
@@ -557,10 +595,12 @@ class NovelRealWorldCachingEnv:
         self.last_hit_rate = local_hits / denom
         self.last_requests = requests
         self.last_active_mask = active
+        self._cached_temporal_probs = None
 
         self.step_idx += 1
         done = self.step_idx >= self.cfg.episode_len
         next_obs = obs_before if done else self._build_observation()
+        self._cached_obs = next_obs
         info = {
             "reward": reward,
             "reward_per_sbs": reward_per_sbs.astype(np.float32),

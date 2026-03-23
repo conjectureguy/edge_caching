@@ -27,11 +27,18 @@ class GraphAttention(nn.Module):
 
 
 class TemporalGraphCooperativePolicy(nn.Module):
-    def __init__(self, node_feat_dim: int, candidate_feat_dim: int, hidden_dim: int, fp: int) -> None:
+    def __init__(self, node_feat_dim: int, candidate_feat_dim: int, hidden_dim: int, fp: int, use_graph: bool = True) -> None:
         super().__init__()
+        self.use_graph = use_graph
         self.gat1 = GraphAttention(node_feat_dim, hidden_dim)
         self.gat2 = GraphAttention(hidden_dim, hidden_dim)
         self.norm = nn.LayerNorm(hidden_dim)
+        self.node_encoder = nn.Sequential(
+            nn.Linear(node_feat_dim, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.GELU(),
+        )
         self.candidate_encoder = nn.Sequential(
             nn.Linear(candidate_feat_dim, hidden_dim),
             nn.GELU(),
@@ -53,14 +60,18 @@ class TemporalGraphCooperativePolicy(nn.Module):
         adjacency: torch.Tensor,
         action_mask: torch.Tensor,
     ) -> torch.Tensor:
-        h = torch.relu(self.gat1(node_features, adjacency))
-        h = self.norm(torch.relu(self.gat2(h, adjacency)) + h)
+        if self.use_graph:
+            h = torch.relu(self.gat1(node_features, adjacency))
+            h = self.norm(torch.relu(self.gat2(h, adjacency)) + h)
+        else:
+            h = self.node_encoder(node_features)
         cand = self.candidate_encoder(candidate_features)
         q = self.query(h).unsqueeze(1).expand(-1, cand.shape[1], -1)
         fused = torch.cat([q * cand, cand], dim=-1)
         logits = self.score_head(fused).squeeze(-1)
         bias = 20.0 * candidate_features[..., 0] + 4.0 * candidate_features[..., 4] + 1.5 * candidate_features[..., 5]
         bias = bias + 1.5 * candidate_features[..., 1] - 1.5 * candidate_features[..., 2]
+        bias = bias + 1.2 * candidate_features[..., 6] + 2.5 * candidate_features[..., 7]
         logits = logits + bias
         no_valid = action_mask.sum(dim=-1) <= 0
         if torch.any(no_valid):
@@ -80,10 +91,30 @@ class ImitationConfig:
     teacher_forcing_final_prob: float = 0.2
     teacher_score_loss_weight: float = 0.35
     label_smoothing: float = 0.05
+    decode_diversity_penalty: float = 0.35
 
 
 @dataclass
 class ImitationHistory:
+    losses: list[float]
+    rewards: list[float]
+    local_hit_rates: list[float]
+    paper_hit_rates: list[float]
+
+
+@dataclass
+class ReinforceConfig:
+    epochs: int = 6
+    episodes_per_epoch: int = 4
+    lr: float = 1e-4
+    gamma: float = 0.99
+    entropy_weight: float = 1e-3
+    device: str = "cpu"
+    decode_diversity_penalty: float = 0.35
+
+
+@dataclass
+class ReinforceHistory:
     losses: list[float]
     rewards: list[float]
     local_hit_rates: list[float]
@@ -98,16 +129,30 @@ def _obs_to_tensors(obs: dict[str, np.ndarray], device: torch.device) -> tuple[t
     return node, cand, adj, mask
 
 
-def logits_to_cache_items(logits: torch.Tensor, env) -> np.ndarray:
-    topk = min(env.cfg.cache_capacity, logits.shape[1])
-    slots = torch.topk(logits, k=topk, dim=-1).indices.detach().cpu().numpy().astype(np.int64)
+def logits_to_cache_items(logits: torch.Tensor, env, diversity_penalty: float = 0.0) -> np.ndarray:
+    slot_scores = logits.detach().cpu().numpy().astype(np.float64)
     out = np.zeros((env.cfg.n_sbs, env.cfg.cache_capacity), dtype=np.int64)
-    for b in range(env.cfg.n_sbs):
+    planned: list[set[int]] = [set() for _ in range(env.cfg.n_sbs)]
+    order = np.argsort(slot_scores.max(axis=1) + 0.5 * env.current_future_load)[::-1]
+    for b in order.tolist():
         chosen = []
         seen: set[int] = set()
-        for slot in slots[b]:
+        adjusted = slot_scores[b].copy()
+        if diversity_penalty > 0.0:
+            neigh = np.where(env.current_adjacency[b] > 0.0)[0]
+            neigh = neigh[neigh != b]
+            for slot in np.where(env.current_mask[b])[0].tolist():
+                item = int(env.current_candidates[b, int(slot)])
+                overlap = sum(item in planned[int(n)] for n in neigh)
+                adjusted[slot] -= diversity_penalty * float(overlap)
+                adjusted[slot] += 0.10 * float(item in env.cache_items[b])
+                adjusted[slot] += 0.80 * float(env.current_neighbor_shortage[b, int(slot)])
+        ranked = np.argsort(adjusted)[::-1]
+        for slot in ranked.tolist():
             item = int(env.current_candidates[b, int(slot)])
             if item <= 0 or item in seen:
+                continue
+            if not env.current_mask[b, int(slot)]:
                 continue
             chosen.append(item)
             seen.add(item)
@@ -122,10 +167,83 @@ def logits_to_cache_items(logits: torch.Tensor, env) -> np.ndarray:
                 if len(chosen) >= env.cfg.cache_capacity:
                     break
         out[b] = np.asarray(chosen[: env.cfg.cache_capacity], dtype=np.int64)
+        planned[b] = set(out[b].tolist())
     return out
 
 
-def train_graph_cache_policy_imitation(env, model: TemporalGraphCooperativePolicy, cfg: ImitationConfig, seed: int = 42):
+def sample_cache_items(
+    logits: torch.Tensor,
+    env,
+    diversity_penalty: float = 0.0,
+) -> tuple[np.ndarray, torch.Tensor, torch.Tensor]:
+    device = logits.device
+    out = np.zeros((env.cfg.n_sbs, env.cfg.cache_capacity), dtype=np.int64)
+    total_log_prob = torch.zeros((), dtype=torch.float32, device=device)
+    total_entropy = torch.zeros((), dtype=torch.float32, device=device)
+    planned: list[set[int]] = [set() for _ in range(env.cfg.n_sbs)]
+    order = np.argsort(logits.detach().cpu().numpy().max(axis=1) + 0.5 * env.current_future_load)[::-1]
+
+    for b in order.tolist():
+        scores = logits[b].clone()
+        valid_slots = np.where(env.current_mask[b])[0].tolist()
+        neigh = np.where(env.current_adjacency[b] > 0.0)[0]
+        neigh = neigh[neigh != b]
+        for slot in valid_slots:
+            item = int(env.current_candidates[b, slot])
+            overlap = sum(item in planned[int(n)] for n in neigh)
+            scores[slot] = scores[slot] - diversity_penalty * float(overlap)
+            scores[slot] = scores[slot] + 0.10 * float(item in env.cache_items[b])
+            scores[slot] = scores[slot] + 0.80 * float(env.current_neighbor_shortage[b, slot])
+
+        used_slots: set[int] = set()
+        chosen: list[int] = []
+        seen_items: set[int] = set()
+        for _ in range(env.cfg.cache_capacity):
+            masked_scores = scores.clone()
+            if used_slots:
+                masked_scores[list(used_slots)] = -1e9
+            invalid_slots = np.where(~env.current_mask[b])[0]
+            if invalid_slots.size > 0:
+                masked_scores[torch.as_tensor(invalid_slots, dtype=torch.long, device=device)] = -1e9
+            probs = torch.softmax(masked_scores, dim=-1)
+            if not torch.isfinite(probs).all() or float(probs.sum().item()) <= 0.0:
+                break
+            dist = torch.distributions.Categorical(probs=probs)
+            slot_tensor = dist.sample()
+            slot = int(slot_tensor.item())
+            used_slots.add(slot)
+            total_log_prob = total_log_prob + dist.log_prob(slot_tensor)
+            total_entropy = total_entropy + dist.entropy()
+            item = int(env.current_candidates[b, slot])
+            if item <= 0 or item in seen_items:
+                continue
+            chosen.append(item)
+            seen_items.add(item)
+            if len(chosen) >= env.cfg.cache_capacity:
+                break
+
+        if len(chosen) < env.cfg.cache_capacity:
+            for item in (np.argsort(env.global_popularity[1:])[-env.cfg.cache_capacity :][::-1] + 1).tolist():
+                if item in seen_items:
+                    continue
+                chosen.append(int(item))
+                seen_items.add(int(item))
+                if len(chosen) >= env.cfg.cache_capacity:
+                    break
+        out[b] = np.asarray(chosen[: env.cfg.cache_capacity], dtype=np.int64)
+        planned[b] = set(out[b].tolist())
+    return out, total_log_prob, total_entropy
+
+
+def train_graph_cache_policy_imitation(
+    env,
+    model: TemporalGraphCooperativePolicy,
+    cfg: ImitationConfig,
+    seed: int = 42,
+    logger=None,
+    log_every_epoch: int = 1,
+    log_every_episode: int = 1,
+):
     torch.manual_seed(seed)
     np.random.seed(seed)
     device = torch.device(cfg.device)
@@ -175,11 +293,30 @@ def train_graph_cache_policy_imitation(env, model: TemporalGraphCooperativePolic
                 epoch_losses.append(float(loss.item()))
 
                 use_teacher = np.random.random() < teacher_forcing_prob
-                chosen_items = teacher_items if use_teacher else logits_to_cache_items(logits, env)
+                chosen_items = teacher_items if use_teacher else logits_to_cache_items(
+                    logits,
+                    env,
+                    diversity_penalty=cfg.decode_diversity_penalty,
+                )
                 obs, reward, done, info = env.step_full_cache_items(chosen_items)
                 epoch_rewards.append(float(reward))
                 epoch_local.append(float(info["local_hit_rate"]))
                 epoch_paper.append(float(info["local_hit_rate"] + info["neighbor_fetch_rate"]))
+
+            if logger is not None and (
+                (episode + 1) % max(1, log_every_episode) == 0 or (episode + 1) == cfg.episodes_per_epoch
+            ):
+                logger.info(
+                    "Imitation epoch %d/%d episode %d/%d complete | teacher_forcing=%.3f reward=%.4f local_hit=%.4f paper_hit=%.4f",
+                    epoch + 1,
+                    cfg.epochs,
+                    episode + 1,
+                    cfg.episodes_per_epoch,
+                    teacher_forcing_prob,
+                    float(np.mean(epoch_rewards)) if epoch_rewards else float("nan"),
+                    float(np.mean(epoch_local)) if epoch_local else float("nan"),
+                    float(np.mean(epoch_paper)) if epoch_paper else float("nan"),
+                )
 
         epoch_loss_mean = float(np.mean(epoch_losses)) if epoch_losses else float("nan")
         epoch_reward_mean = float(np.mean(epoch_rewards)) if epoch_rewards else float("nan")
@@ -196,6 +333,20 @@ def train_graph_cache_policy_imitation(env, model: TemporalGraphCooperativePolic
             best_score = epoch_score
             best_state = copy.deepcopy(model.state_dict())
 
+        if logger is not None and (
+            (epoch + 1) % max(1, log_every_epoch) == 0 or (epoch + 1) == cfg.epochs
+        ):
+            logger.info(
+                "Imitation epoch %d/%d summary | loss=%.6f reward=%.4f local_hit=%.4f paper_hit=%.4f best_score=%.4f",
+                epoch + 1,
+                cfg.epochs,
+                epoch_loss_mean,
+                epoch_reward_mean,
+                epoch_local_mean,
+                epoch_paper_mean,
+                best_score,
+            )
+
     model.load_state_dict(best_state)
 
     return ImitationHistory(
@@ -206,8 +357,156 @@ def train_graph_cache_policy_imitation(env, model: TemporalGraphCooperativePolic
     )
 
 
+def fine_tune_graph_cache_policy_reinforce(
+    env,
+    model: TemporalGraphCooperativePolicy,
+    cfg: ReinforceConfig,
+    seed: int = 42,
+    logger=None,
+    log_every_epoch: int = 1,
+    log_every_episode: int = 1,
+):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    device = torch.device(cfg.device)
+    model = model.to(device)
+    opt = torch.optim.Adam(model.parameters(), lr=cfg.lr)
+    best_state = copy.deepcopy(model.state_dict())
+    initial_eval = evaluate_graph_cache_policy(
+        env,
+        model,
+        episodes=1,
+        seed=seed + 9000,
+        device=cfg.device,
+        decode_diversity_penalty=cfg.decode_diversity_penalty,
+    )[0]
+    best_score = (
+        float(initial_eval["reward"])
+        + 500.0 * float(initial_eval["local_hit_rate"])
+        + 350.0 * float(initial_eval["paper_hit_rate"])
+    )
+    running_baseline = 0.0
+
+    losses: list[float] = []
+    rewards: list[float] = []
+    local_hits: list[float] = []
+    paper_hits: list[float] = []
+
+    for epoch in range(cfg.epochs):
+        epoch_losses = []
+        epoch_rewards = []
+        epoch_local = []
+        epoch_paper = []
+        for episode in range(cfg.episodes_per_epoch):
+            obs = env.reset(seed=seed + 10000 + epoch * 100 + episode)
+            done = False
+            log_probs: list[torch.Tensor] = []
+            entropies: list[torch.Tensor] = []
+            rewards_per_step: list[float] = []
+            local_per_step: list[float] = []
+            paper_per_step: list[float] = []
+
+            while not done:
+                node, cand, adj, mask = _obs_to_tensors(obs, device)
+                logits = model(node, cand, adj, mask)
+                chosen, log_prob, entropy = sample_cache_items(
+                    logits,
+                    env,
+                    diversity_penalty=cfg.decode_diversity_penalty,
+                )
+                obs, reward, done, info = env.step_full_cache_items(chosen)
+                log_probs.append(log_prob)
+                entropies.append(entropy)
+                rewards_per_step.append(float(reward))
+                local_per_step.append(float(info["local_hit_rate"]))
+                paper_per_step.append(float(info["local_hit_rate"] + info["neighbor_fetch_rate"]))
+
+            returns = []
+            ret = 0.0
+            for reward in reversed(rewards_per_step):
+                ret = reward + cfg.gamma * ret
+                returns.append(ret)
+            returns.reverse()
+            returns_t = torch.as_tensor(returns, dtype=torch.float32, device=device)
+            episode_mean_return = float(returns_t.mean().item()) if returns else 0.0
+            running_baseline = 0.9 * running_baseline + 0.1 * episode_mean_return
+            adv = returns_t - running_baseline
+            adv = (adv - adv.mean()) / (adv.std(unbiased=False) + 1e-6)
+            log_prob_t = torch.stack(log_probs)
+            entropy_t = torch.stack(entropies)
+            loss = -(adv.detach() * log_prob_t).mean() - cfg.entropy_weight * entropy_t.mean()
+
+            opt.zero_grad()
+            loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            opt.step()
+
+            epoch_losses.append(float(loss.item()))
+            epoch_rewards.append(float(np.sum(rewards_per_step)))
+            epoch_local.append(float(np.mean(local_per_step)) if local_per_step else 0.0)
+            epoch_paper.append(float(np.mean(paper_per_step)) if paper_per_step else 0.0)
+
+            if logger is not None and (
+                (episode + 1) % max(1, log_every_episode) == 0 or (episode + 1) == cfg.episodes_per_epoch
+            ):
+                logger.info(
+                    "Reinforce epoch %d/%d episode %d/%d complete | loss=%.6f reward=%.4f local_hit=%.4f paper_hit=%.4f",
+                    epoch + 1,
+                    cfg.epochs,
+                    episode + 1,
+                    cfg.episodes_per_epoch,
+                    float(np.mean(epoch_losses)) if epoch_losses else float("nan"),
+                    float(np.mean(epoch_rewards)) if epoch_rewards else float("nan"),
+                    float(np.mean(epoch_local)) if epoch_local else float("nan"),
+                    float(np.mean(epoch_paper)) if epoch_paper else float("nan"),
+                )
+
+        epoch_loss_mean = float(np.mean(epoch_losses)) if epoch_losses else float("nan")
+        epoch_reward_mean = float(np.mean(epoch_rewards)) if epoch_rewards else float("nan")
+        epoch_local_mean = float(np.mean(epoch_local)) if epoch_local else float("nan")
+        epoch_paper_mean = float(np.mean(epoch_paper)) if epoch_paper else float("nan")
+        losses.append(epoch_loss_mean)
+        rewards.append(epoch_reward_mean)
+        local_hits.append(epoch_local_mean)
+        paper_hits.append(epoch_paper_mean)
+
+        epoch_score = epoch_reward_mean + 500.0 * epoch_local_mean + 350.0 * epoch_paper_mean
+        if epoch_score > best_score:
+            best_score = epoch_score
+            best_state = copy.deepcopy(model.state_dict())
+
+        if logger is not None and (
+            (epoch + 1) % max(1, log_every_epoch) == 0 or (epoch + 1) == cfg.epochs
+        ):
+            logger.info(
+                "Reinforce epoch %d/%d summary | loss=%.6f reward=%.4f local_hit=%.4f paper_hit=%.4f best_score=%.4f",
+                epoch + 1,
+                cfg.epochs,
+                epoch_loss_mean,
+                epoch_reward_mean,
+                epoch_local_mean,
+                epoch_paper_mean,
+                best_score,
+            )
+
+    model.load_state_dict(best_state)
+    return ReinforceHistory(
+        losses=losses,
+        rewards=rewards,
+        local_hit_rates=local_hits,
+        paper_hit_rates=paper_hits,
+    )
+
+
 @torch.no_grad()
-def evaluate_graph_cache_policy(env, model: TemporalGraphCooperativePolicy, episodes: int, seed: int = 42, device: str = "cpu"):
+def evaluate_graph_cache_policy(
+    env,
+    model: TemporalGraphCooperativePolicy,
+    episodes: int,
+    seed: int = 42,
+    device: str = "cpu",
+    decode_diversity_penalty: float = 0.35,
+):
     model = model.to(device)
     model.eval()
     rows = []
@@ -222,7 +521,7 @@ def evaluate_graph_cache_policy(env, model: TemporalGraphCooperativePolicy, epis
         while not done:
             node, cand, adj, mask = _obs_to_tensors(obs, torch.device(device))
             logits = model(node, cand, adj, mask)
-            chosen = logits_to_cache_items(logits, env)
+            chosen = logits_to_cache_items(logits, env, diversity_penalty=decode_diversity_penalty)
             obs, reward, done, info = env.step_full_cache_items(chosen)
             reward_sum += float(reward)
             local_sum += float(info["local_hit_rate"])
