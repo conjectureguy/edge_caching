@@ -30,6 +30,8 @@ class SimulationResult:
     ue_positions_over_time: np.ndarray  # (n_steps+1, n_ues, 2)
     sbs_positions_over_time: np.ndarray  # (n_updates, n_sbs, 2)
     update_times: np.ndarray  # (n_updates,)
+    hotspot_positions_over_time: np.ndarray | None = None  # (n_steps+1, n_hotspots, 2)
+    hotspot_assignments: np.ndarray | None = None  # (n_ues,)
 
 
 @dataclass
@@ -197,9 +199,12 @@ def run_simulation(cfg: SimulationConfig) -> SimulationResult:
 
     hotspot_positions = None
     hotspot_assignments = None
+    hotspot_history = None
     if cfg.n_hotspots > 0 and cfg.hotspot_weight > 0.0:
         hotspot_positions = _random_initial_positions(rng, cfg.n_hotspots, cfg.grid_size)
         hotspot_assignments = rng.integers(0, cfg.n_hotspots, size=(cfg.n_ues,))
+        hotspot_history = np.empty((n_steps + 1, cfg.n_hotspots, 2), dtype=np.float64)
+        hotspot_history[0] = hotspot_positions
 
     sbs_history = []
     update_times = []
@@ -212,6 +217,8 @@ def run_simulation(cfg: SimulationConfig) -> SimulationResult:
     for step in range(1, n_steps + 1):
         if hotspot_positions is not None and hotspot_assignments is not None:
             hotspot_positions = _slow_random_walk_step(rng, hotspot_positions, cfg.dt, cfg.hotspot_speed, cfg.grid_size)
+            assert hotspot_history is not None
+            hotspot_history[step] = hotspot_positions
             ue_targets = hotspot_positions[hotspot_assignments]
             ue_positions = _biased_random_walk_step(
                 rng,
@@ -244,6 +251,8 @@ def run_simulation(cfg: SimulationConfig) -> SimulationResult:
         ue_positions_over_time=ue_history,
         sbs_positions_over_time=np.asarray(sbs_history),
         update_times=np.asarray(update_times),
+        hotspot_positions_over_time=hotspot_history,
+        hotspot_assignments=None if hotspot_assignments is None else hotspot_assignments.copy(),
     )
 
 
@@ -369,4 +378,8 @@ def freeze_sbs_positions(result: SimulationResult) -> SimulationResult:
         ue_positions_over_time=result.ue_positions_over_time.copy(),
         sbs_positions_over_time=fixed_sbs,
         update_times=result.update_times.copy(),
+        hotspot_positions_over_time=None
+        if result.hotspot_positions_over_time is None
+        else result.hotspot_positions_over_time.copy(),
+        hotspot_assignments=None if result.hotspot_assignments is None else result.hotspot_assignments.copy(),
     )
