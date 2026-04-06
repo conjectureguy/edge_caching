@@ -1,0 +1,7 @@
+Run dir: outputs/novel_realworld_ml1m_sbs16_ues480
+Dataset: ml-1m
+Evaluation episodes: 2
+Our-TemporalGraph: reward_mean=1069.8750 local_hit_mean=0.0547 paper_hit_mean=0.1603 cloud_fetch_mean=0.8397
+Paper2-AWFDRL-like: reward_mean=1191.6500 local_hit_mean=0.0624 paper_hit_mean=0.1662 cloud_fetch_mean=0.8338
+Paper3-MAAFDRL-like: reward_mean=1051.3000 local_hit_mean=0.0718 paper_hit_mean=0.1432 cloud_fetch_mean=0.8568
+Paper4-DTS-DDPG-like: reward_mean=1064.7500 local_hit_mean=0.0469 paper_hit_mean=0.1554 cloud_fetch_mean=0.8446

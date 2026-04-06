@@ -7,6 +7,8 @@ import zipfile
 from pathlib import Path
 from urllib.error import URLError
 
+import numpy as np
+
 MOVIELENS_100K_URL = "https://files.grouplens.org/datasets/movielens/ml-100k.zip"
 MOVIELENS_100K_DIRNAME = "ml-100k"
 MOVIELENS_1M_URL = "https://files.grouplens.org/datasets/movielens/ml-1m.zip"
@@ -125,3 +127,80 @@ def load_ratings_auto(dataset_dir: str | Path) -> list[dict[str, int]]:
     if (dataset_dir / "ratings.dat").exists():
         return load_ratings_1m(dataset_dir)
     raise FileNotFoundError(f"Could not find supported ratings file under {dataset_dir}")
+
+
+def load_item_genres_1m(dataset_dir: str | Path) -> tuple[list[str], dict[int, list[int]]]:
+    dataset_dir = Path(dataset_dir)
+    movies_path = dataset_dir / "movies.dat"
+    genre_to_idx: dict[str, int] = {}
+    item_to_genres: dict[int, list[int]] = {}
+    with movies_path.open("r", encoding="latin-1", newline="") as f:
+        for line in f:
+            movie_id_str, _title, genres_str = line.rstrip("\n").split("::")
+            movie_id = int(movie_id_str)
+            indices: list[int] = []
+            for genre in genres_str.split("|"):
+                if genre == "(no genres listed)":
+                    continue
+                if genre not in genre_to_idx:
+                    genre_to_idx[genre] = len(genre_to_idx)
+                indices.append(genre_to_idx[genre])
+            item_to_genres[movie_id] = indices
+    genres = [None] * len(genre_to_idx)
+    for genre, idx in genre_to_idx.items():
+        genres[idx] = genre
+    return genres, item_to_genres
+
+
+def load_item_genres_100k(dataset_dir: str | Path) -> tuple[list[str], dict[int, list[int]]]:
+    dataset_dir = Path(dataset_dir)
+    item_path = dataset_dir / "u.item"
+    genres = [
+        "unknown",
+        "Action",
+        "Adventure",
+        "Animation",
+        "Children's",
+        "Comedy",
+        "Crime",
+        "Documentary",
+        "Drama",
+        "Fantasy",
+        "Film-Noir",
+        "Horror",
+        "Musical",
+        "Mystery",
+        "Romance",
+        "Sci-Fi",
+        "Thriller",
+        "War",
+        "Western",
+    ]
+    item_to_genres: dict[int, list[int]] = {}
+    with item_path.open("r", encoding="latin-1", newline="") as f:
+        reader = csv.reader(f, delimiter="|")
+        for row in reader:
+            if len(row) < 24:
+                continue
+            item_id = int(row[0])
+            flags = row[-19:]
+            item_to_genres[item_id] = [idx for idx, flag in enumerate(flags) if int(flag) > 0]
+    return genres, item_to_genres
+
+
+def load_item_genres_auto(dataset_dir: str | Path) -> tuple[np.ndarray, list[str]]:
+    dataset_dir = Path(dataset_dir)
+    if (dataset_dir / "movies.dat").exists():
+        genres, item_to_genres = load_item_genres_1m(dataset_dir)
+    elif (dataset_dir / "u.item").exists():
+        genres, item_to_genres = load_item_genres_100k(dataset_dir)
+    else:
+        raise FileNotFoundError(f"Could not find supported item metadata file under {dataset_dir}")
+
+    max_item_id = max(item_to_genres.keys(), default=0)
+    mat = np.zeros((max_item_id + 1, max(1, len(genres))), dtype=float)
+    for item_id, idxs in item_to_genres.items():
+        if not idxs:
+            continue
+        mat[item_id, idxs] = 1.0 / float(len(idxs))
+    return mat, genres

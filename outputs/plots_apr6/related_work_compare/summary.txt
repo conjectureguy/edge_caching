@@ -1,0 +1,7 @@
+Run dir: outputs/plots_apr6/novel_realworld_main
+Dataset: ml-1m
+Evaluation episodes: 3
+Our-TemporalGraph: reward_mean=602.8333 local_hit_mean=0.0732 paper_hit_mean=0.1575 cloud_fetch_mean=0.8425
+Paper2-AWFDRL-like: reward_mean=595.8667 local_hit_mean=0.0659 paper_hit_mean=0.1594 cloud_fetch_mean=0.8406
+Paper3-MAAFDRL-like: reward_mean=238.9667 local_hit_mean=0.0795 paper_hit_mean=0.1398 cloud_fetch_mean=0.8602
+Paper4-DTS-DDPG-like: reward_mean=651.4000 local_hit_mean=0.0683 paper_hit_mean=0.1510 cloud_fetch_mean=0.8490

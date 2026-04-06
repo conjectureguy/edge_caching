@@ -1,0 +1,19 @@
+2026-04-06 08:23:23,939 | INFO | related_work_compare | Stage 1/4: loading dataset ml-1m
+2026-04-06 08:23:25,998 | INFO | related_work_compare | Stage 2/4: loading trained temporal encoder from outputs/plots_apr6_v3/novel_realworld_main/realworld_temporal_encoder.pt
+2026-04-06 08:23:26,049 | INFO | related_work_compare | Stage 3/4: building evaluation environment
+2026-04-06 08:23:27,030 | INFO | related_work_compare | Environment ready | node_dim=137 candidate_dim=74
+2026-04-06 08:23:27,030 | INFO | related_work_compare | Stage 4/4: evaluating our method and paper-inspired baselines
+2026-04-06 08:23:27,037 | INFO | related_work_compare | Evaluating TemporalGraph in the same fresh harness as the paper-inspired baselines
+2026-04-06 08:24:15,029 | INFO | related_work_compare | Paper2-AWFDRL-like episode 1/3 | reward=411.7000 local=0.0566 neighbor=0.0578 cloud=0.8856 paper_hit=0.1144
+2026-04-06 08:24:26,675 | INFO | related_work_compare | Paper2-AWFDRL-like episode 2/3 | reward=339.3000 local=0.0392 neighbor=0.0551 cloud=0.9056 paper_hit=0.0944
+2026-04-06 08:24:38,752 | INFO | related_work_compare | Paper2-AWFDRL-like episode 3/3 | reward=253.7000 local=0.0373 neighbor=0.0384 cloud=0.9242 paper_hit=0.0758
+2026-04-06 08:24:49,596 | INFO | related_work_compare | Paper3-MAAFDRL-like episode 1/3 | reward=484.1000 local=0.0941 neighbor=0.0349 cloud=0.8710 paper_hit=0.1290
+2026-04-06 08:25:01,280 | INFO | related_work_compare | Paper3-MAAFDRL-like episode 2/3 | reward=519.4000 local=0.0946 neighbor=0.0461 cloud=0.8593 paper_hit=0.1407
+2026-04-06 08:25:12,459 | INFO | related_work_compare | Paper3-MAAFDRL-like episode 3/3 | reward=474.2000 local=0.0985 neighbor=0.0400 cloud=0.8614 paper_hit=0.1386
+2026-04-06 08:25:24,486 | INFO | related_work_compare | Paper4-DTS-DDPG-like episode 1/3 | reward=439.9000 local=0.0539 neighbor=0.0561 cloud=0.8900 paper_hit=0.1100
+2026-04-06 08:25:35,302 | INFO | related_work_compare | Paper4-DTS-DDPG-like episode 2/3 | reward=335.0000 local=0.0406 neighbor=0.0444 cloud=0.9151 paper_hit=0.0849
+2026-04-06 08:25:46,872 | INFO | related_work_compare | Paper4-DTS-DDPG-like episode 3/3 | reward=289.6000 local=0.0355 neighbor=0.0385 cloud=0.9261 paper_hit=0.0739
+2026-04-06 08:25:48,465 | INFO | related_work_compare | Our-TemporalGraph: reward_mean=654.1333 local_hit_mean=0.0852 paper_hit_mean=0.1154 cloud_fetch_mean=0.8846
+2026-04-06 08:25:48,465 | INFO | related_work_compare | Paper2-AWFDRL-like: reward_mean=334.9000 local_hit_mean=0.0444 paper_hit_mean=0.0948 cloud_fetch_mean=0.9052
+2026-04-06 08:25:48,465 | INFO | related_work_compare | Paper3-MAAFDRL-like: reward_mean=492.5667 local_hit_mean=0.0957 paper_hit_mean=0.1361 cloud_fetch_mean=0.8639
+2026-04-06 08:25:48,465 | INFO | related_work_compare | Paper4-DTS-DDPG-like: reward_mean=354.8333 local_hit_mean=0.0433 paper_hit_mean=0.0896 cloud_fetch_mean=0.9104

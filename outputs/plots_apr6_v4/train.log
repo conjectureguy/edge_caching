@@ -1,0 +1,230 @@
+2026-04-06 13:10:08,805 | INFO | novel_realworld_cache | Stage 1/5: loading ml-1m
+2026-04-06 13:10:13,196 | INFO | novel_realworld_cache | Dataset ready | dataset=ml-1m ratings=1000209 users=6040
+2026-04-06 13:10:13,196 | INFO | novel_realworld_cache | Stage 2/5: building real-world timestamp-aware temporal dataset
+2026-04-06 13:10:32,518 | INFO | novel_realworld_cache | Temporal dataset ready | samples=927729 train=837500 val=90229
+2026-04-06 13:10:32,518 | INFO | novel_realworld_cache | Stage 3/5: elastic federated training for real-world temporal encoder
+2026-04-06 13:10:32,576 | INFO | novel_realworld_cache | Real-world temporal federated training started: rounds=15 clients_per_round=100 users=6040
+2026-04-06 13:10:58,707 | INFO | novel_realworld_cache | Real-world temporal round 1/15 | train_loss=8.288632 val_loss=8.287569
+2026-04-06 13:11:19,142 | INFO | novel_realworld_cache | Real-world temporal round 2/15 | train_loss=8.286015 val_loss=8.286716
+2026-04-06 13:11:41,167 | INFO | novel_realworld_cache | Real-world temporal round 3/15 | train_loss=8.286998 val_loss=8.285872
+2026-04-06 13:12:02,584 | INFO | novel_realworld_cache | Real-world temporal round 4/15 | train_loss=8.282105 val_loss=8.284983
+2026-04-06 13:12:26,501 | INFO | novel_realworld_cache | Real-world temporal round 5/15 | train_loss=8.282303 val_loss=8.283867
+2026-04-06 13:12:49,259 | INFO | novel_realworld_cache | Real-world temporal round 6/15 | train_loss=8.282025 val_loss=8.282551
+2026-04-06 13:13:13,323 | INFO | novel_realworld_cache | Real-world temporal round 7/15 | train_loss=8.276474 val_loss=8.280671
+2026-04-06 13:13:36,908 | INFO | novel_realworld_cache | Real-world temporal round 8/15 | train_loss=8.274890 val_loss=8.278210
+2026-04-06 13:14:01,682 | INFO | novel_realworld_cache | Real-world temporal round 9/15 | train_loss=8.274936 val_loss=8.274172
+2026-04-06 13:14:26,254 | INFO | novel_realworld_cache | Real-world temporal round 10/15 | train_loss=8.266201 val_loss=8.268414
+2026-04-06 13:14:49,481 | INFO | novel_realworld_cache | Real-world temporal round 11/15 | train_loss=8.258308 val_loss=8.260280
+2026-04-06 13:15:14,777 | INFO | novel_realworld_cache | Real-world temporal round 12/15 | train_loss=8.248636 val_loss=8.251725
+2026-04-06 13:15:37,683 | INFO | novel_realworld_cache | Real-world temporal round 13/15 | train_loss=8.226622 val_loss=8.243334
+2026-04-06 13:16:01,825 | INFO | novel_realworld_cache | Real-world temporal round 14/15 | train_loss=8.220066 val_loss=8.234726
+2026-04-06 13:16:27,459 | INFO | novel_realworld_cache | Real-world temporal round 15/15 | train_loss=8.200947 val_loss=8.222272
+2026-04-06 13:16:27,473 | INFO | novel_realworld_cache | Stage 4/5: building novel real-world caching environment
+2026-04-06 13:16:28,647 | INFO | novel_realworld_cache | Environment ready | node_dim=137 candidate_dim=74
+2026-04-06 13:16:28,647 | INFO | novel_realworld_cache | Stage 5/5: training temporal-graph cooperative cache policy
+2026-04-06 13:17:15,419 | INFO | novel_realworld_cache | Imitation epoch 1/25 episode 2/10 complete | teacher_forcing=0.900 reward=4.7796 local_hit=0.0729 paper_hit=0.1279
+2026-04-06 13:18:03,541 | INFO | novel_realworld_cache | Imitation epoch 1/25 episode 4/10 complete | teacher_forcing=0.900 reward=4.7506 local_hit=0.0737 paper_hit=0.1286
+2026-04-06 13:18:50,133 | INFO | novel_realworld_cache | Imitation epoch 1/25 episode 6/10 complete | teacher_forcing=0.900 reward=4.8835 local_hit=0.0722 paper_hit=0.1286
+2026-04-06 13:19:37,504 | INFO | novel_realworld_cache | Imitation epoch 1/25 episode 8/10 complete | teacher_forcing=0.900 reward=4.8103 local_hit=0.0711 paper_hit=0.1285
+2026-04-06 13:20:24,445 | INFO | novel_realworld_cache | Imitation epoch 1/25 episode 10/10 complete | teacher_forcing=0.900 reward=4.7617 local_hit=0.0702 paper_hit=0.1270
+2026-04-06 13:20:55,798 | INFO | novel_realworld_cache | Imitation epoch 1/25 summary | loss=3.176516 reward=4.7617 local_hit=0.0702 paper_hit=0.1270 sel_reward=575.6000 sel_local=0.0715 sel_paper=0.1273 best_score=292.1353
+2026-04-06 13:21:40,784 | INFO | novel_realworld_cache | Imitation epoch 2/25 episode 2/10 complete | teacher_forcing=0.865 reward=5.0942 local_hit=0.0753 paper_hit=0.1333
+2026-04-06 13:22:28,751 | INFO | novel_realworld_cache | Imitation epoch 2/25 episode 4/10 complete | teacher_forcing=0.865 reward=4.8875 local_hit=0.0736 paper_hit=0.1306
+2026-04-06 13:23:16,255 | INFO | novel_realworld_cache | Imitation epoch 2/25 episode 6/10 complete | teacher_forcing=0.865 reward=5.0771 local_hit=0.0755 paper_hit=0.1326
+2026-04-06 13:24:03,740 | INFO | novel_realworld_cache | Imitation epoch 2/25 episode 8/10 complete | teacher_forcing=0.865 reward=5.0426 local_hit=0.0739 paper_hit=0.1297
+2026-04-06 13:24:52,842 | INFO | novel_realworld_cache | Imitation epoch 2/25 episode 10/10 complete | teacher_forcing=0.865 reward=5.0386 local_hit=0.0732 paper_hit=0.1289
+2026-04-06 13:25:24,452 | INFO | novel_realworld_cache | Imitation epoch 2/25 summary | loss=3.133002 reward=5.0386 local_hit=0.0732 paper_hit=0.1289 sel_reward=576.0500 sel_local=0.0702 sel_paper=0.1173 best_score=292.1353
+2026-04-06 13:26:12,499 | INFO | novel_realworld_cache | Imitation epoch 3/25 episode 2/10 complete | teacher_forcing=0.829 reward=4.9554 local_hit=0.0722 paper_hit=0.1266
+2026-04-06 13:26:59,686 | INFO | novel_realworld_cache | Imitation epoch 3/25 episode 4/10 complete | teacher_forcing=0.829 reward=4.7777 local_hit=0.0685 paper_hit=0.1251
+2026-04-06 13:27:49,278 | INFO | novel_realworld_cache | Imitation epoch 3/25 episode 6/10 complete | teacher_forcing=0.829 reward=4.7024 local_hit=0.0656 paper_hit=0.1234
+2026-04-06 13:28:37,138 | INFO | novel_realworld_cache | Imitation epoch 3/25 episode 8/10 complete | teacher_forcing=0.829 reward=4.8896 local_hit=0.0684 paper_hit=0.1277
+2026-04-06 13:29:26,370 | INFO | novel_realworld_cache | Imitation epoch 3/25 episode 10/10 complete | teacher_forcing=0.829 reward=4.8101 local_hit=0.0674 paper_hit=0.1271
+2026-04-06 13:29:57,495 | INFO | novel_realworld_cache | Imitation epoch 3/25 summary | loss=3.132773 reward=4.8101 local_hit=0.0674 paper_hit=0.1271 sel_reward=530.1500 sel_local=0.0666 sel_paper=0.1161 best_score=292.1353
+2026-04-06 13:30:46,419 | INFO | novel_realworld_cache | Imitation epoch 4/25 episode 2/10 complete | teacher_forcing=0.794 reward=4.9921 local_hit=0.0676 paper_hit=0.1205
+2026-04-06 13:31:37,132 | INFO | novel_realworld_cache | Imitation epoch 4/25 episode 4/10 complete | teacher_forcing=0.794 reward=4.7694 local_hit=0.0649 paper_hit=0.1172
+2026-04-06 13:32:25,202 | INFO | novel_realworld_cache | Imitation epoch 4/25 episode 6/10 complete | teacher_forcing=0.794 reward=4.8296 local_hit=0.0674 paper_hit=0.1198
+2026-04-06 13:33:14,769 | INFO | novel_realworld_cache | Imitation epoch 4/25 episode 8/10 complete | teacher_forcing=0.794 reward=4.8675 local_hit=0.0686 paper_hit=0.1213
+2026-04-06 13:34:03,218 | INFO | novel_realworld_cache | Imitation epoch 4/25 episode 10/10 complete | teacher_forcing=0.794 reward=4.9156 local_hit=0.0697 paper_hit=0.1217
+2026-04-06 13:34:35,788 | INFO | novel_realworld_cache | Imitation epoch 4/25 summary | loss=3.132509 reward=4.9156 local_hit=0.0697 paper_hit=0.1217 sel_reward=502.8500 sel_local=0.0652 sel_paper=0.1201 best_score=292.1353
+2026-04-06 13:35:26,212 | INFO | novel_realworld_cache | Imitation epoch 5/25 episode 2/10 complete | teacher_forcing=0.758 reward=4.3883 local_hit=0.0556 paper_hit=0.1221
+2026-04-06 13:36:17,396 | INFO | novel_realworld_cache | Imitation epoch 5/25 episode 4/10 complete | teacher_forcing=0.758 reward=4.4973 local_hit=0.0573 paper_hit=0.1239
+2026-04-06 13:37:05,890 | INFO | novel_realworld_cache | Imitation epoch 5/25 episode 6/10 complete | teacher_forcing=0.758 reward=4.8672 local_hit=0.0649 paper_hit=0.1313
+2026-04-06 13:37:54,502 | INFO | novel_realworld_cache | Imitation epoch 5/25 episode 8/10 complete | teacher_forcing=0.758 reward=4.8365 local_hit=0.0664 paper_hit=0.1295
+2026-04-06 13:38:42,961 | INFO | novel_realworld_cache | Imitation epoch 5/25 episode 10/10 complete | teacher_forcing=0.758 reward=4.8116 local_hit=0.0654 paper_hit=0.1264
+2026-04-06 13:39:14,623 | INFO | novel_realworld_cache | Imitation epoch 5/25 summary | loss=3.130988 reward=4.8116 local_hit=0.0654 paper_hit=0.1264 sel_reward=547.9500 sel_local=0.0648 sel_paper=0.1251 best_score=292.1353
+2026-04-06 13:40:03,504 | INFO | novel_realworld_cache | Imitation epoch 6/25 episode 2/10 complete | teacher_forcing=0.723 reward=4.6587 local_hit=0.0647 paper_hit=0.1147
+2026-04-06 13:40:52,262 | INFO | novel_realworld_cache | Imitation epoch 6/25 episode 4/10 complete | teacher_forcing=0.723 reward=4.8654 local_hit=0.0691 paper_hit=0.1207
+2026-04-06 13:41:40,828 | INFO | novel_realworld_cache | Imitation epoch 6/25 episode 6/10 complete | teacher_forcing=0.723 reward=4.9940 local_hit=0.0704 paper_hit=0.1262
+2026-04-06 13:42:28,439 | INFO | novel_realworld_cache | Imitation epoch 6/25 episode 8/10 complete | teacher_forcing=0.723 reward=5.0393 local_hit=0.0718 paper_hit=0.1274
+2026-04-06 13:43:17,390 | INFO | novel_realworld_cache | Imitation epoch 6/25 episode 10/10 complete | teacher_forcing=0.723 reward=5.0248 local_hit=0.0710 paper_hit=0.1291
+2026-04-06 13:43:48,861 | INFO | novel_realworld_cache | Imitation epoch 6/25 summary | loss=3.129474 reward=5.0248 local_hit=0.0710 paper_hit=0.1291 sel_reward=621.2500 sel_local=0.0751 sel_paper=0.1241 best_score=292.1353
+2026-04-06 13:44:36,666 | INFO | novel_realworld_cache | Imitation epoch 7/25 episode 2/10 complete | teacher_forcing=0.688 reward=4.5992 local_hit=0.0635 paper_hit=0.1246
+2026-04-06 13:45:24,864 | INFO | novel_realworld_cache | Imitation epoch 7/25 episode 4/10 complete | teacher_forcing=0.688 reward=4.7125 local_hit=0.0644 paper_hit=0.1291
+2026-04-06 13:46:12,844 | INFO | novel_realworld_cache | Imitation epoch 7/25 episode 6/10 complete | teacher_forcing=0.688 reward=4.7906 local_hit=0.0666 paper_hit=0.1288
+2026-04-06 13:47:00,468 | INFO | novel_realworld_cache | Imitation epoch 7/25 episode 8/10 complete | teacher_forcing=0.688 reward=4.7120 local_hit=0.0663 paper_hit=0.1265
+2026-04-06 13:47:47,869 | INFO | novel_realworld_cache | Imitation epoch 7/25 episode 10/10 complete | teacher_forcing=0.688 reward=4.6777 local_hit=0.0657 paper_hit=0.1252
+2026-04-06 13:48:19,438 | INFO | novel_realworld_cache | Imitation epoch 7/25 summary | loss=3.129069 reward=4.6777 local_hit=0.0657 paper_hit=0.1252 sel_reward=607.3000 sel_local=0.0708 sel_paper=0.1310 best_score=298.3987
+2026-04-06 13:49:07,944 | INFO | novel_realworld_cache | Imitation epoch 8/25 episode 2/10 complete | teacher_forcing=0.652 reward=4.7742 local_hit=0.0655 paper_hit=0.1207
+2026-04-06 13:49:56,431 | INFO | novel_realworld_cache | Imitation epoch 8/25 episode 4/10 complete | teacher_forcing=0.652 reward=4.6277 local_hit=0.0651 paper_hit=0.1226
+2026-04-06 13:50:45,105 | INFO | novel_realworld_cache | Imitation epoch 8/25 episode 6/10 complete | teacher_forcing=0.652 reward=4.4239 local_hit=0.0615 paper_hit=0.1215
+2026-04-06 13:51:33,631 | INFO | novel_realworld_cache | Imitation epoch 8/25 episode 8/10 complete | teacher_forcing=0.652 reward=4.3903 local_hit=0.0607 paper_hit=0.1192
+2026-04-06 13:52:22,151 | INFO | novel_realworld_cache | Imitation epoch 8/25 episode 10/10 complete | teacher_forcing=0.652 reward=4.5493 local_hit=0.0634 paper_hit=0.1225
+2026-04-06 13:52:52,998 | INFO | novel_realworld_cache | Imitation epoch 8/25 summary | loss=3.128647 reward=4.5493 local_hit=0.0634 paper_hit=0.1225 sel_reward=546.7500 sel_local=0.0641 sel_paper=0.1280 best_score=298.3987
+2026-04-06 13:53:41,953 | INFO | novel_realworld_cache | Imitation epoch 9/25 episode 2/10 complete | teacher_forcing=0.617 reward=4.8133 local_hit=0.0596 paper_hit=0.1291
+2026-04-06 13:54:31,198 | INFO | novel_realworld_cache | Imitation epoch 9/25 episode 4/10 complete | teacher_forcing=0.617 reward=4.4235 local_hit=0.0586 paper_hit=0.1252
+2026-04-06 13:55:21,868 | INFO | novel_realworld_cache | Imitation epoch 9/25 episode 6/10 complete | teacher_forcing=0.617 reward=4.4196 local_hit=0.0585 paper_hit=0.1233
+2026-04-06 13:56:09,975 | INFO | novel_realworld_cache | Imitation epoch 9/25 episode 8/10 complete | teacher_forcing=0.617 reward=4.6479 local_hit=0.0624 paper_hit=0.1243
+2026-04-06 13:56:57,644 | INFO | novel_realworld_cache | Imitation epoch 9/25 episode 10/10 complete | teacher_forcing=0.617 reward=4.6863 local_hit=0.0627 paper_hit=0.1246
+2026-04-06 13:57:29,693 | INFO | novel_realworld_cache | Imitation epoch 9/25 summary | loss=3.130556 reward=4.6863 local_hit=0.0627 paper_hit=0.1246 sel_reward=541.6000 sel_local=0.0620 sel_paper=0.1173 best_score=298.3987
+2026-04-06 13:58:18,577 | INFO | novel_realworld_cache | Imitation epoch 10/25 episode 2/10 complete | teacher_forcing=0.581 reward=4.8829 local_hit=0.0713 paper_hit=0.1314
+2026-04-06 13:59:07,632 | INFO | novel_realworld_cache | Imitation epoch 10/25 episode 4/10 complete | teacher_forcing=0.581 reward=4.8104 local_hit=0.0691 paper_hit=0.1274
+2026-04-06 13:59:56,255 | INFO | novel_realworld_cache | Imitation epoch 10/25 episode 6/10 complete | teacher_forcing=0.581 reward=4.6089 local_hit=0.0659 paper_hit=0.1243
+2026-04-06 14:00:44,982 | INFO | novel_realworld_cache | Imitation epoch 10/25 episode 8/10 complete | teacher_forcing=0.581 reward=4.6157 local_hit=0.0653 paper_hit=0.1224
+2026-04-06 14:01:34,205 | INFO | novel_realworld_cache | Imitation epoch 10/25 episode 10/10 complete | teacher_forcing=0.581 reward=4.6198 local_hit=0.0657 paper_hit=0.1224
+2026-04-06 14:02:06,438 | INFO | novel_realworld_cache | Imitation epoch 10/25 summary | loss=3.131252 reward=4.6198 local_hit=0.0657 paper_hit=0.1224 sel_reward=609.4500 sel_local=0.0692 sel_paper=0.1281 best_score=298.3987
+2026-04-06 14:02:54,211 | INFO | novel_realworld_cache | Imitation epoch 11/25 episode 2/10 complete | teacher_forcing=0.546 reward=4.6954 local_hit=0.0664 paper_hit=0.1259
+2026-04-06 14:03:44,085 | INFO | novel_realworld_cache | Imitation epoch 11/25 episode 4/10 complete | teacher_forcing=0.546 reward=4.7038 local_hit=0.0679 paper_hit=0.1297
+2026-04-06 14:04:34,391 | INFO | novel_realworld_cache | Imitation epoch 11/25 episode 6/10 complete | teacher_forcing=0.546 reward=4.7008 local_hit=0.0678 paper_hit=0.1273
+2026-04-06 14:05:25,093 | INFO | novel_realworld_cache | Imitation epoch 11/25 episode 8/10 complete | teacher_forcing=0.546 reward=4.7194 local_hit=0.0662 paper_hit=0.1270
+2026-04-06 14:06:13,963 | INFO | novel_realworld_cache | Imitation epoch 11/25 episode 10/10 complete | teacher_forcing=0.546 reward=4.5929 local_hit=0.0636 paper_hit=0.1233
+2026-04-06 14:06:45,675 | INFO | novel_realworld_cache | Imitation epoch 11/25 summary | loss=3.130496 reward=4.5929 local_hit=0.0636 paper_hit=0.1233 sel_reward=504.0500 sel_local=0.0540 sel_paper=0.1220 best_score=298.3987
+2026-04-06 14:07:34,802 | INFO | novel_realworld_cache | Imitation epoch 12/25 episode 2/10 complete | teacher_forcing=0.510 reward=4.6667 local_hit=0.0656 paper_hit=0.1193
+2026-04-06 14:08:22,497 | INFO | novel_realworld_cache | Imitation epoch 12/25 episode 4/10 complete | teacher_forcing=0.510 reward=4.6415 local_hit=0.0640 paper_hit=0.1186
+2026-04-06 14:09:11,851 | INFO | novel_realworld_cache | Imitation epoch 12/25 episode 6/10 complete | teacher_forcing=0.510 reward=4.8436 local_hit=0.0683 paper_hit=0.1248
+2026-04-06 14:10:00,394 | INFO | novel_realworld_cache | Imitation epoch 12/25 episode 8/10 complete | teacher_forcing=0.510 reward=4.7576 local_hit=0.0658 paper_hit=0.1230
+2026-04-06 14:10:50,845 | INFO | novel_realworld_cache | Imitation epoch 12/25 episode 10/10 complete | teacher_forcing=0.510 reward=4.6952 local_hit=0.0656 paper_hit=0.1238
+2026-04-06 14:11:22,513 | INFO | novel_realworld_cache | Imitation epoch 12/25 summary | loss=3.132359 reward=4.6952 local_hit=0.0656 paper_hit=0.1238 sel_reward=570.4000 sel_local=0.0643 sel_paper=0.1280 best_score=298.3987
+2026-04-06 14:12:11,470 | INFO | novel_realworld_cache | Imitation epoch 13/25 episode 2/10 complete | teacher_forcing=0.475 reward=4.6892 local_hit=0.0605 paper_hit=0.1214
+2026-04-06 14:13:00,015 | INFO | novel_realworld_cache | Imitation epoch 13/25 episode 4/10 complete | teacher_forcing=0.475 reward=4.5300 local_hit=0.0604 paper_hit=0.1203
+2026-04-06 14:13:48,891 | INFO | novel_realworld_cache | Imitation epoch 13/25 episode 6/10 complete | teacher_forcing=0.475 reward=4.5228 local_hit=0.0603 paper_hit=0.1185
+2026-04-06 14:14:39,594 | INFO | novel_realworld_cache | Imitation epoch 13/25 episode 8/10 complete | teacher_forcing=0.475 reward=4.3630 local_hit=0.0594 paper_hit=0.1169
+2026-04-06 14:15:29,716 | INFO | novel_realworld_cache | Imitation epoch 13/25 episode 10/10 complete | teacher_forcing=0.475 reward=4.3881 local_hit=0.0600 paper_hit=0.1184
+2026-04-06 14:16:01,413 | INFO | novel_realworld_cache | Imitation epoch 13/25 summary | loss=3.132046 reward=4.3881 local_hit=0.0600 paper_hit=0.1184 sel_reward=651.8000 sel_local=0.0760 sel_paper=0.1391 best_score=317.6594
+2026-04-06 14:16:48,752 | INFO | novel_realworld_cache | Imitation epoch 14/25 episode 2/10 complete | teacher_forcing=0.440 reward=5.1488 local_hit=0.0693 paper_hit=0.1341
+2026-04-06 14:17:38,765 | INFO | novel_realworld_cache | Imitation epoch 14/25 episode 4/10 complete | teacher_forcing=0.440 reward=5.0250 local_hit=0.0678 paper_hit=0.1349
+2026-04-06 14:18:26,490 | INFO | novel_realworld_cache | Imitation epoch 14/25 episode 6/10 complete | teacher_forcing=0.440 reward=4.9244 local_hit=0.0686 paper_hit=0.1298
+2026-04-06 14:19:15,790 | INFO | novel_realworld_cache | Imitation epoch 14/25 episode 8/10 complete | teacher_forcing=0.440 reward=4.8132 local_hit=0.0665 paper_hit=0.1255
+2026-04-06 14:20:06,454 | INFO | novel_realworld_cache | Imitation epoch 14/25 episode 10/10 complete | teacher_forcing=0.440 reward=4.8030 local_hit=0.0658 paper_hit=0.1243
+2026-04-06 14:20:37,614 | INFO | novel_realworld_cache | Imitation epoch 14/25 summary | loss=3.131805 reward=4.8030 local_hit=0.0658 paper_hit=0.1243 sel_reward=581.9000 sel_local=0.0679 sel_paper=0.1194 best_score=317.6594
+2026-04-06 14:21:27,343 | INFO | novel_realworld_cache | Imitation epoch 15/25 episode 2/10 complete | teacher_forcing=0.404 reward=4.9008 local_hit=0.0698 paper_hit=0.1283
+2026-04-06 14:22:18,177 | INFO | novel_realworld_cache | Imitation epoch 15/25 episode 4/10 complete | teacher_forcing=0.404 reward=4.6375 local_hit=0.0646 paper_hit=0.1225
+2026-04-06 14:23:07,079 | INFO | novel_realworld_cache | Imitation epoch 15/25 episode 6/10 complete | teacher_forcing=0.404 reward=4.6626 local_hit=0.0642 paper_hit=0.1223
+2026-04-06 14:23:55,186 | INFO | novel_realworld_cache | Imitation epoch 15/25 episode 8/10 complete | teacher_forcing=0.404 reward=4.6298 local_hit=0.0635 paper_hit=0.1214
+2026-04-06 14:24:44,410 | INFO | novel_realworld_cache | Imitation epoch 15/25 episode 10/10 complete | teacher_forcing=0.404 reward=4.6891 local_hit=0.0642 paper_hit=0.1229
+2026-04-06 14:25:16,547 | INFO | novel_realworld_cache | Imitation epoch 15/25 summary | loss=3.131359 reward=4.6891 local_hit=0.0642 paper_hit=0.1229 sel_reward=559.2000 sel_local=0.0664 sel_paper=0.1174 best_score=317.6594
+2026-04-06 14:26:06,762 | INFO | novel_realworld_cache | Imitation epoch 16/25 episode 2/10 complete | teacher_forcing=0.369 reward=4.7571 local_hit=0.0701 paper_hit=0.1316
+2026-04-06 14:26:57,174 | INFO | novel_realworld_cache | Imitation epoch 16/25 episode 4/10 complete | teacher_forcing=0.369 reward=4.8519 local_hit=0.0714 paper_hit=0.1332
+2026-04-06 14:27:47,235 | INFO | novel_realworld_cache | Imitation epoch 16/25 episode 6/10 complete | teacher_forcing=0.369 reward=4.8139 local_hit=0.0717 paper_hit=0.1320
+2026-04-06 14:28:36,853 | INFO | novel_realworld_cache | Imitation epoch 16/25 episode 8/10 complete | teacher_forcing=0.369 reward=4.7468 local_hit=0.0708 paper_hit=0.1277
+2026-04-06 14:29:25,947 | INFO | novel_realworld_cache | Imitation epoch 16/25 episode 10/10 complete | teacher_forcing=0.369 reward=4.8267 local_hit=0.0713 paper_hit=0.1280
+2026-04-06 14:29:58,773 | INFO | novel_realworld_cache | Imitation epoch 16/25 summary | loss=3.133181 reward=4.8267 local_hit=0.0713 paper_hit=0.1280 sel_reward=560.4500 sel_local=0.0625 sel_paper=0.1257 best_score=317.6594
+2026-04-06 14:30:48,521 | INFO | novel_realworld_cache | Imitation epoch 17/25 episode 2/10 complete | teacher_forcing=0.333 reward=4.6350 local_hit=0.0600 paper_hit=0.1244
+2026-04-06 14:31:39,344 | INFO | novel_realworld_cache | Imitation epoch 17/25 episode 4/10 complete | teacher_forcing=0.333 reward=4.9977 local_hit=0.0690 paper_hit=0.1268
+2026-04-06 14:32:29,308 | INFO | novel_realworld_cache | Imitation epoch 17/25 episode 6/10 complete | teacher_forcing=0.333 reward=4.9154 local_hit=0.0692 paper_hit=0.1286
+2026-04-06 14:33:18,349 | INFO | novel_realworld_cache | Imitation epoch 17/25 episode 8/10 complete | teacher_forcing=0.333 reward=4.9031 local_hit=0.0698 paper_hit=0.1280
+2026-04-06 14:34:08,252 | INFO | novel_realworld_cache | Imitation epoch 17/25 episode 10/10 complete | teacher_forcing=0.333 reward=5.0318 local_hit=0.0713 paper_hit=0.1288
+2026-04-06 14:34:41,863 | INFO | novel_realworld_cache | Imitation epoch 17/25 summary | loss=3.132927 reward=5.0318 local_hit=0.0713 paper_hit=0.1288 sel_reward=535.8500 sel_local=0.0645 sel_paper=0.1153 best_score=317.6594
+2026-04-06 14:35:32,224 | INFO | novel_realworld_cache | Imitation epoch 18/25 episode 2/10 complete | teacher_forcing=0.298 reward=4.4883 local_hit=0.0667 paper_hit=0.1183
+2026-04-06 14:36:22,321 | INFO | novel_realworld_cache | Imitation epoch 18/25 episode 4/10 complete | teacher_forcing=0.298 reward=4.5133 local_hit=0.0685 paper_hit=0.1238
+2026-04-06 14:37:12,999 | INFO | novel_realworld_cache | Imitation epoch 18/25 episode 6/10 complete | teacher_forcing=0.298 reward=4.4928 local_hit=0.0674 paper_hit=0.1248
+2026-04-06 14:38:05,173 | INFO | novel_realworld_cache | Imitation epoch 18/25 episode 8/10 complete | teacher_forcing=0.298 reward=4.6720 local_hit=0.0700 paper_hit=0.1276
+2026-04-06 14:38:56,389 | INFO | novel_realworld_cache | Imitation epoch 18/25 episode 10/10 complete | teacher_forcing=0.298 reward=4.6165 local_hit=0.0678 paper_hit=0.1250
+2026-04-06 14:39:29,184 | INFO | novel_realworld_cache | Imitation epoch 18/25 summary | loss=3.134059 reward=4.6165 local_hit=0.0678 paper_hit=0.1250 sel_reward=525.6000 sel_local=0.0588 sel_paper=0.1158 best_score=317.6594
+2026-04-06 14:40:20,264 | INFO | novel_realworld_cache | Imitation epoch 19/25 episode 2/10 complete | teacher_forcing=0.263 reward=4.5837 local_hit=0.0634 paper_hit=0.1321
+2026-04-06 14:41:10,272 | INFO | novel_realworld_cache | Imitation epoch 19/25 episode 4/10 complete | teacher_forcing=0.263 reward=4.8640 local_hit=0.0676 paper_hit=0.1301
+2026-04-06 14:42:03,139 | INFO | novel_realworld_cache | Imitation epoch 19/25 episode 6/10 complete | teacher_forcing=0.263 reward=4.8081 local_hit=0.0660 paper_hit=0.1289
+2026-04-06 14:42:54,195 | INFO | novel_realworld_cache | Imitation epoch 19/25 episode 8/10 complete | teacher_forcing=0.263 reward=4.7472 local_hit=0.0666 paper_hit=0.1288
+2026-04-06 14:43:43,635 | INFO | novel_realworld_cache | Imitation epoch 19/25 episode 10/10 complete | teacher_forcing=0.263 reward=4.6451 local_hit=0.0647 paper_hit=0.1257
+2026-04-06 14:44:17,763 | INFO | novel_realworld_cache | Imitation epoch 19/25 summary | loss=3.131948 reward=4.6451 local_hit=0.0647 paper_hit=0.1257 sel_reward=578.3000 sel_local=0.0683 sel_paper=0.1236 best_score=317.6594
+2026-04-06 14:45:08,294 | INFO | novel_realworld_cache | Imitation epoch 20/25 episode 2/10 complete | teacher_forcing=0.227 reward=4.6304 local_hit=0.0675 paper_hit=0.1242
+2026-04-06 14:45:59,895 | INFO | novel_realworld_cache | Imitation epoch 20/25 episode 4/10 complete | teacher_forcing=0.227 reward=4.7029 local_hit=0.0679 paper_hit=0.1260
+2026-04-06 14:46:49,837 | INFO | novel_realworld_cache | Imitation epoch 20/25 episode 6/10 complete | teacher_forcing=0.227 reward=4.6914 local_hit=0.0664 paper_hit=0.1239
+2026-04-06 14:47:41,996 | INFO | novel_realworld_cache | Imitation epoch 20/25 episode 8/10 complete | teacher_forcing=0.227 reward=4.6611 local_hit=0.0642 paper_hit=0.1241
+2026-04-06 14:48:32,469 | INFO | novel_realworld_cache | Imitation epoch 20/25 episode 10/10 complete | teacher_forcing=0.227 reward=4.7418 local_hit=0.0655 paper_hit=0.1247
+2026-04-06 14:49:05,716 | INFO | novel_realworld_cache | Imitation epoch 20/25 summary | loss=3.135433 reward=4.7418 local_hit=0.0655 paper_hit=0.1247 sel_reward=569.5000 sel_local=0.0658 sel_paper=0.1219 best_score=317.6594
+2026-04-06 14:49:56,395 | INFO | novel_realworld_cache | Imitation epoch 21/25 episode 2/10 complete | teacher_forcing=0.192 reward=4.3433 local_hit=0.0618 paper_hit=0.1181
+2026-04-06 14:50:47,018 | INFO | novel_realworld_cache | Imitation epoch 21/25 episode 4/10 complete | teacher_forcing=0.192 reward=4.8896 local_hit=0.0706 paper_hit=0.1286
+2026-04-06 14:51:40,019 | INFO | novel_realworld_cache | Imitation epoch 21/25 episode 6/10 complete | teacher_forcing=0.192 reward=4.7553 local_hit=0.0675 paper_hit=0.1281
+2026-04-06 14:52:30,629 | INFO | novel_realworld_cache | Imitation epoch 21/25 episode 8/10 complete | teacher_forcing=0.192 reward=4.7191 local_hit=0.0670 paper_hit=0.1259
+2026-04-06 14:53:22,625 | INFO | novel_realworld_cache | Imitation epoch 21/25 episode 10/10 complete | teacher_forcing=0.192 reward=4.8736 local_hit=0.0688 paper_hit=0.1278
+2026-04-06 14:53:54,104 | INFO | novel_realworld_cache | Imitation epoch 21/25 summary | loss=3.134931 reward=4.8736 local_hit=0.0688 paper_hit=0.1278 sel_reward=580.8000 sel_local=0.0709 sel_paper=0.1242 best_score=317.6594
+2026-04-06 14:54:46,254 | INFO | novel_realworld_cache | Imitation epoch 22/25 episode 2/10 complete | teacher_forcing=0.156 reward=4.6379 local_hit=0.0634 paper_hit=0.1220
+2026-04-06 14:55:37,357 | INFO | novel_realworld_cache | Imitation epoch 22/25 episode 4/10 complete | teacher_forcing=0.156 reward=4.6390 local_hit=0.0665 paper_hit=0.1248
+2026-04-06 14:56:28,662 | INFO | novel_realworld_cache | Imitation epoch 22/25 episode 6/10 complete | teacher_forcing=0.156 reward=4.7647 local_hit=0.0686 paper_hit=0.1256
+2026-04-06 14:57:20,269 | INFO | novel_realworld_cache | Imitation epoch 22/25 episode 8/10 complete | teacher_forcing=0.156 reward=4.7542 local_hit=0.0674 paper_hit=0.1244
+2026-04-06 14:58:11,534 | INFO | novel_realworld_cache | Imitation epoch 22/25 episode 10/10 complete | teacher_forcing=0.156 reward=4.7582 local_hit=0.0672 paper_hit=0.1247
+2026-04-06 14:58:43,670 | INFO | novel_realworld_cache | Imitation epoch 22/25 summary | loss=3.133719 reward=4.7582 local_hit=0.0672 paper_hit=0.1247 sel_reward=569.4000 sel_local=0.0650 sel_paper=0.1336 best_score=317.6594
+2026-04-06 14:59:34,366 | INFO | novel_realworld_cache | Imitation epoch 23/25 episode 2/10 complete | teacher_forcing=0.121 reward=4.3367 local_hit=0.0641 paper_hit=0.1177
+2026-04-06 15:00:29,857 | INFO | novel_realworld_cache | Imitation epoch 23/25 episode 4/10 complete | teacher_forcing=0.121 reward=4.5092 local_hit=0.0662 paper_hit=0.1204
+2026-04-06 15:01:20,763 | INFO | novel_realworld_cache | Imitation epoch 23/25 episode 6/10 complete | teacher_forcing=0.121 reward=4.6567 local_hit=0.0675 paper_hit=0.1213
+2026-04-06 15:02:12,413 | INFO | novel_realworld_cache | Imitation epoch 23/25 episode 8/10 complete | teacher_forcing=0.121 reward=4.6368 local_hit=0.0679 paper_hit=0.1240
+2026-04-06 15:03:04,297 | INFO | novel_realworld_cache | Imitation epoch 23/25 episode 10/10 complete | teacher_forcing=0.121 reward=4.6262 local_hit=0.0660 paper_hit=0.1235
+2026-04-06 15:03:37,865 | INFO | novel_realworld_cache | Imitation epoch 23/25 summary | loss=3.134132 reward=4.6262 local_hit=0.0660 paper_hit=0.1235 sel_reward=639.3000 sel_local=0.0771 sel_paper=0.1281 best_score=317.6594
+2026-04-06 15:04:28,286 | INFO | novel_realworld_cache | Imitation epoch 24/25 episode 2/10 complete | teacher_forcing=0.085 reward=4.8425 local_hit=0.0701 paper_hit=0.1285
+2026-04-06 15:05:19,427 | INFO | novel_realworld_cache | Imitation epoch 24/25 episode 4/10 complete | teacher_forcing=0.085 reward=4.7002 local_hit=0.0658 paper_hit=0.1256
+2026-04-06 15:06:11,086 | INFO | novel_realworld_cache | Imitation epoch 24/25 episode 6/10 complete | teacher_forcing=0.085 reward=4.6233 local_hit=0.0632 paper_hit=0.1236
+2026-04-06 15:07:01,759 | INFO | novel_realworld_cache | Imitation epoch 24/25 episode 8/10 complete | teacher_forcing=0.085 reward=4.5673 local_hit=0.0625 paper_hit=0.1227
+2026-04-06 15:07:53,655 | INFO | novel_realworld_cache | Imitation epoch 24/25 episode 10/10 complete | teacher_forcing=0.085 reward=4.5400 local_hit=0.0625 paper_hit=0.1213
+2026-04-06 15:08:26,239 | INFO | novel_realworld_cache | Imitation epoch 24/25 summary | loss=3.137198 reward=4.5400 local_hit=0.0625 paper_hit=0.1213 sel_reward=605.1500 sel_local=0.0695 sel_paper=0.1274 best_score=317.6594
+2026-04-06 15:09:19,090 | INFO | novel_realworld_cache | Imitation epoch 25/25 episode 2/10 complete | teacher_forcing=0.050 reward=4.4729 local_hit=0.0636 paper_hit=0.1214
+2026-04-06 15:10:15,435 | INFO | novel_realworld_cache | Imitation epoch 25/25 episode 4/10 complete | teacher_forcing=0.050 reward=4.4025 local_hit=0.0596 paper_hit=0.1219
+2026-04-06 15:11:08,761 | INFO | novel_realworld_cache | Imitation epoch 25/25 episode 6/10 complete | teacher_forcing=0.050 reward=4.4256 local_hit=0.0596 paper_hit=0.1220
+2026-04-06 15:11:59,376 | INFO | novel_realworld_cache | Imitation epoch 25/25 episode 8/10 complete | teacher_forcing=0.050 reward=4.6121 local_hit=0.0633 paper_hit=0.1258
+2026-04-06 15:12:51,780 | INFO | novel_realworld_cache | Imitation epoch 25/25 episode 10/10 complete | teacher_forcing=0.050 reward=4.7470 local_hit=0.0667 paper_hit=0.1277
+2026-04-06 15:13:23,507 | INFO | novel_realworld_cache | Imitation epoch 25/25 summary | loss=3.139544 reward=4.7470 local_hit=0.0667 paper_hit=0.1277 sel_reward=564.8000 sel_local=0.0632 sel_paper=0.1199 best_score=317.6594
+2026-04-06 15:13:23,515 | INFO | novel_realworld_cache | Stage 5b/5: reward fine-tuning temporal-graph policy
+2026-04-06 15:16:31,249 | INFO | novel_realworld_cache | Reinforce epoch 1/15 episode 2/8 complete | loss=-0.150474 reward=-39.6000 local_hit=0.0584 paper_hit=0.1031
+2026-04-06 15:19:52,718 | INFO | novel_realworld_cache | Reinforce epoch 1/15 episode 4/8 complete | loss=-0.273661 reward=4.8750 local_hit=0.0600 paper_hit=0.1104
+2026-04-06 15:22:50,064 | INFO | novel_realworld_cache | Reinforce epoch 1/15 episode 6/8 complete | loss=-0.381514 reward=-7.5000 local_hit=0.0588 paper_hit=0.1084
+2026-04-06 15:25:53,209 | INFO | novel_realworld_cache | Reinforce epoch 1/15 episode 8/8 complete | loss=-0.411792 reward=-9.3375 local_hit=0.0595 paper_hit=0.1092
+2026-04-06 15:26:27,577 | INFO | novel_realworld_cache | Reinforce epoch 1/15 summary | loss=-0.411792 reward=-9.3375 local_hit=0.0595 paper_hit=0.1092 sel_reward=484.2500 sel_local=0.0586 sel_paper=0.1185 best_score=318.1871
+2026-04-06 15:29:21,792 | INFO | novel_realworld_cache | Reinforce epoch 2/15 episode 2/8 complete | loss=-0.344006 reward=21.4500 local_hit=0.0660 paper_hit=0.1193
+2026-04-06 15:32:31,926 | INFO | novel_realworld_cache | Reinforce epoch 2/15 episode 4/8 complete | loss=-0.066739 reward=24.1000 local_hit=0.0666 paper_hit=0.1188
+2026-04-06 15:36:32,852 | INFO | novel_realworld_cache | Reinforce epoch 2/15 episode 6/8 complete | loss=-0.399415 reward=23.7500 local_hit=0.0652 paper_hit=0.1171
+2026-04-06 15:40:02,414 | INFO | novel_realworld_cache | Reinforce epoch 2/15 episode 8/8 complete | loss=-0.321654 reward=3.0875 local_hit=0.0617 paper_hit=0.1130
+2026-04-06 15:40:35,800 | INFO | novel_realworld_cache | Reinforce epoch 2/15 summary | loss=-0.321654 reward=3.0875 local_hit=0.0617 paper_hit=0.1130 sel_reward=546.5000 sel_local=0.0609 sel_paper=0.1241 best_score=333.3164
+2026-04-06 15:43:45,931 | INFO | novel_realworld_cache | Reinforce epoch 3/15 episode 2/8 complete | loss=0.723693 reward=-53.6000 local_hit=0.0515 paper_hit=0.1127
+2026-04-06 15:46:55,984 | INFO | novel_realworld_cache | Reinforce epoch 3/15 episode 4/8 complete | loss=0.110810 reward=-5.1750 local_hit=0.0594 paper_hit=0.1176
+2026-04-06 15:49:06,068 | INFO | novel_realworld_cache | Reinforce epoch 3/15 episode 6/8 complete | loss=0.055198 reward=-11.7333 local_hit=0.0594 paper_hit=0.1130
+2026-04-06 15:51:29,409 | INFO | novel_realworld_cache | Reinforce epoch 3/15 episode 8/8 complete | loss=0.035799 reward=-10.7125 local_hit=0.0590 paper_hit=0.1116
+2026-04-06 15:51:53,330 | INFO | novel_realworld_cache | Reinforce epoch 3/15 summary | loss=0.035799 reward=-10.7125 local_hit=0.0590 paper_hit=0.1116 sel_reward=500.4500 sel_local=0.0554 sel_paper=0.1191 best_score=333.3164
+2026-04-06 15:54:26,589 | INFO | novel_realworld_cache | Reinforce epoch 4/15 episode 2/8 complete | loss=0.264440 reward=48.4000 local_hit=0.0729 paper_hit=0.1107
+2026-04-06 15:56:49,687 | INFO | novel_realworld_cache | Reinforce epoch 4/15 episode 4/8 complete | loss=0.155316 reward=38.5250 local_hit=0.0668 paper_hit=0.1109
+2026-04-06 15:59:12,295 | INFO | novel_realworld_cache | Reinforce epoch 4/15 episode 6/8 complete | loss=0.180773 reward=9.7000 local_hit=0.0622 paper_hit=0.1072
+2026-04-06 16:01:00,185 | INFO | novel_realworld_cache | Reinforce epoch 4/15 episode 8/8 complete | loss=0.066694 reward=11.8000 local_hit=0.0612 paper_hit=0.1075
+2026-04-06 16:01:23,135 | INFO | novel_realworld_cache | Reinforce epoch 4/15 summary | loss=0.066694 reward=11.8000 local_hit=0.0612 paper_hit=0.1075 sel_reward=571.4500 sel_local=0.0731 sel_paper=0.1234 best_score=342.9388
+2026-04-06 16:03:05,716 | INFO | novel_realworld_cache | Reinforce epoch 5/15 episode 2/8 complete | loss=-0.509327 reward=20.1000 local_hit=0.0634 paper_hit=0.1127
+2026-04-06 16:04:57,564 | INFO | novel_realworld_cache | Reinforce epoch 5/15 episode 4/8 complete | loss=-0.304248 reward=-1.1500 local_hit=0.0599 paper_hit=0.1086
+2026-04-06 16:06:49,588 | INFO | novel_realworld_cache | Reinforce epoch 5/15 episode 6/8 complete | loss=-0.198021 reward=3.5667 local_hit=0.0606 paper_hit=0.1098
+2026-04-06 16:08:33,789 | INFO | novel_realworld_cache | Reinforce epoch 5/15 episode 8/8 complete | loss=-0.307946 reward=7.0500 local_hit=0.0612 paper_hit=0.1091
+2026-04-06 16:08:52,492 | INFO | novel_realworld_cache | Reinforce epoch 5/15 summary | loss=-0.307946 reward=7.0500 local_hit=0.0612 paper_hit=0.1091 sel_reward=508.9500 sel_local=0.0563 sel_paper=0.1204 best_score=342.9388
+2026-04-06 16:10:24,640 | INFO | novel_realworld_cache | Reinforce epoch 6/15 episode 2/8 complete | loss=-0.881861 reward=-4.5500 local_hit=0.0546 paper_hit=0.1073
+2026-04-06 16:12:03,483 | INFO | novel_realworld_cache | Reinforce epoch 6/15 episode 4/8 complete | loss=-0.344143 reward=-16.6500 local_hit=0.0559 paper_hit=0.1094
+2026-04-06 16:13:43,956 | INFO | novel_realworld_cache | Reinforce epoch 6/15 episode 6/8 complete | loss=-0.456326 reward=-3.7833 local_hit=0.0578 paper_hit=0.1080
+2026-04-06 16:15:23,584 | INFO | novel_realworld_cache | Reinforce epoch 6/15 episode 8/8 complete | loss=-0.276985 reward=-11.2125 local_hit=0.0566 paper_hit=0.1054
+2026-04-06 16:15:51,819 | INFO | novel_realworld_cache | Reinforce epoch 6/15 summary | loss=-0.276985 reward=-11.2125 local_hit=0.0566 paper_hit=0.1054 sel_reward=538.2500 sel_local=0.0644 sel_paper=0.1192 best_score=342.9388
+2026-04-06 16:18:04,457 | INFO | novel_realworld_cache | Reinforce epoch 7/15 episode 2/8 complete | loss=1.379172 reward=-28.0500 local_hit=0.0598 paper_hit=0.0975
+2026-04-06 16:19:55,750 | INFO | novel_realworld_cache | Reinforce epoch 7/15 episode 4/8 complete | loss=0.981122 reward=-7.2750 local_hit=0.0624 paper_hit=0.1072
+2026-04-06 16:21:34,037 | INFO | novel_realworld_cache | Reinforce epoch 7/15 episode 6/8 complete | loss=0.914724 reward=-7.3667 local_hit=0.0625 paper_hit=0.1054
+2026-04-06 16:23:11,811 | INFO | novel_realworld_cache | Reinforce epoch 7/15 episode 8/8 complete | loss=0.806426 reward=5.0500 local_hit=0.0639 paper_hit=0.1068
+2026-04-06 16:23:28,724 | INFO | novel_realworld_cache | Reinforce epoch 7/15 summary | loss=0.806426 reward=5.0500 local_hit=0.0639 paper_hit=0.1068 sel_reward=632.1500 sel_local=0.0774 sel_paper=0.1324 best_score=367.2853
+2026-04-06 16:25:04,220 | INFO | novel_realworld_cache | Reinforce epoch 8/15 episode 2/8 complete | loss=-0.061371 reward=50.2000 local_hit=0.0645 paper_hit=0.1166
+2026-04-06 16:26:41,874 | INFO | novel_realworld_cache | Reinforce epoch 8/15 episode 4/8 complete | loss=-0.554224 reward=38.9750 local_hit=0.0643 paper_hit=0.1124
+2026-04-06 16:28:16,262 | INFO | novel_realworld_cache | Reinforce epoch 8/15 episode 6/8 complete | loss=-0.393687 reward=47.4333 local_hit=0.0665 paper_hit=0.1160
+2026-04-06 16:30:06,876 | INFO | novel_realworld_cache | Reinforce epoch 8/15 episode 8/8 complete | loss=-0.539891 reward=42.2250 local_hit=0.0665 paper_hit=0.1154
+2026-04-06 16:30:28,693 | INFO | novel_realworld_cache | Reinforce epoch 8/15 summary | loss=-0.539891 reward=42.2250 local_hit=0.0665 paper_hit=0.1154 sel_reward=518.8500 sel_local=0.0663 sel_paper=0.1188 best_score=367.2853
+2026-04-06 16:32:13,765 | INFO | novel_realworld_cache | Reinforce epoch 9/15 episode 2/8 complete | loss=0.907215 reward=-1.2500 local_hit=0.0566 paper_hit=0.1058
+2026-04-06 16:33:51,280 | INFO | novel_realworld_cache | Reinforce epoch 9/15 episode 4/8 complete | loss=0.227731 reward=6.1500 local_hit=0.0591 paper_hit=0.1077
+2026-04-06 16:35:52,087 | INFO | novel_realworld_cache | Reinforce epoch 9/15 episode 6/8 complete | loss=0.174018 reward=26.3833 local_hit=0.0620 paper_hit=0.1103
+2026-04-06 16:38:00,591 | INFO | novel_realworld_cache | Reinforce epoch 9/15 episode 8/8 complete | loss=0.177828 reward=32.4750 local_hit=0.0626 paper_hit=0.1129
+2026-04-06 16:38:25,455 | INFO | novel_realworld_cache | Reinforce epoch 9/15 summary | loss=0.177828 reward=32.4750 local_hit=0.0626 paper_hit=0.1129 sel_reward=453.9000 sel_local=0.0504 sel_paper=0.1073 best_score=367.2853
+2026-04-06 16:40:27,994 | INFO | novel_realworld_cache | Reinforce epoch 10/15 episode 2/8 complete | loss=0.522027 reward=27.6000 local_hit=0.0642 paper_hit=0.1074
+2026-04-06 16:42:24,067 | INFO | novel_realworld_cache | Reinforce epoch 10/15 episode 4/8 complete | loss=0.706700 reward=41.6750 local_hit=0.0655 paper_hit=0.1132
+2026-04-06 16:44:02,040 | INFO | novel_realworld_cache | Reinforce epoch 10/15 episode 6/8 complete | loss=0.467208 reward=49.0667 local_hit=0.0657 paper_hit=0.1148
+2026-04-06 16:45:44,525 | INFO | novel_realworld_cache | Reinforce epoch 10/15 episode 8/8 complete | loss=0.371227 reward=51.8250 local_hit=0.0678 paper_hit=0.1178
+2026-04-06 16:46:02,879 | INFO | novel_realworld_cache | Reinforce epoch 10/15 summary | loss=0.371227 reward=51.8250 local_hit=0.0678 paper_hit=0.1178 sel_reward=567.4500 sel_local=0.0661 sel_paper=0.1290 best_score=367.2853
+2026-04-06 16:47:46,400 | INFO | novel_realworld_cache | Reinforce epoch 11/15 episode 2/8 complete | loss=-0.406686 reward=-13.8500 local_hit=0.0589 paper_hit=0.1120
+2026-04-06 16:49:23,263 | INFO | novel_realworld_cache | Reinforce epoch 11/15 episode 4/8 complete | loss=-0.135029 reward=-18.4250 local_hit=0.0579 paper_hit=0.1097
+2026-04-06 16:51:03,029 | INFO | novel_realworld_cache | Reinforce epoch 11/15 episode 6/8 complete | loss=0.272045 reward=5.4500 local_hit=0.0602 paper_hit=0.1116
+2026-04-06 17:10:16,194 | INFO | novel_realworld_cache | Reinforce epoch 11/15 episode 8/8 complete | loss=0.262257 reward=11.1750 local_hit=0.0629 paper_hit=0.1129
+2026-04-06 17:10:32,916 | INFO | novel_realworld_cache | Reinforce epoch 11/15 summary | loss=0.262257 reward=11.1750 local_hit=0.0629 paper_hit=0.1129 sel_reward=530.0500 sel_local=0.0568 sel_paper=0.1216 best_score=367.2853

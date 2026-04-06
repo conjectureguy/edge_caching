@@ -72,6 +72,8 @@ class TemporalGraphCooperativePolicy(nn.Module):
         bias = 20.0 * candidate_features[..., 0] + 4.0 * candidate_features[..., 4] + 1.5 * candidate_features[..., 5]
         bias = bias + 1.5 * candidate_features[..., 1] - 1.5 * candidate_features[..., 2]
         bias = bias + 1.2 * candidate_features[..., 6] + 2.5 * candidate_features[..., 7]
+        if candidate_features.shape[-1] >= 10:
+            bias = bias + 1.6 * candidate_features[..., 8] + 1.2 * candidate_features[..., 9]
         logits = logits + bias
         no_valid = action_mask.sum(dim=-1) <= 0
         if torch.any(no_valid):
@@ -91,7 +93,11 @@ class ImitationConfig:
     teacher_forcing_final_prob: float = 0.2
     teacher_score_loss_weight: float = 0.35
     label_smoothing: float = 0.05
-    decode_diversity_penalty: float = 0.35
+    decode_diversity_penalty: float = 0.25
+    checkpoint_reward_weight: float = 1.0
+    checkpoint_local_hit_weight: float = 800.0
+    checkpoint_paper_hit_weight: float = 1800.0
+    checkpoint_eval_episodes: int = 2
 
 
 @dataclass
@@ -110,7 +116,27 @@ class ReinforceConfig:
     gamma: float = 0.99
     entropy_weight: float = 1e-3
     device: str = "cpu"
-    decode_diversity_penalty: float = 0.35
+    decode_diversity_penalty: float = 0.25
+    edge_hit_bonus_weight: float = 1400.0
+    checkpoint_reward_weight: float = 1.0
+    checkpoint_local_hit_weight: float = 900.0
+    checkpoint_paper_hit_weight: float = 2200.0
+    checkpoint_eval_episodes: int = 2
+
+
+def _selection_score(
+    reward_mean: float,
+    local_hit_mean: float,
+    paper_hit_mean: float,
+    reward_weight: float,
+    local_weight: float,
+    paper_weight: float,
+) -> float:
+    return (
+        reward_weight * (reward_mean / 100.0)
+        + local_weight * local_hit_mean
+        + paper_weight * paper_hit_mean
+    )
 
 
 @dataclass
@@ -138,15 +164,29 @@ def logits_to_cache_items(logits: torch.Tensor, env, diversity_penalty: float = 
         chosen = []
         seen: set[int] = set()
         adjusted = slot_scores[b].copy()
+        valid_slots = np.where(env.current_mask[b])[0].tolist()
+        local_norm = np.zeros((env.cfg.fp,), dtype=np.float64)
+        if valid_slots:
+            raw = np.maximum(env.current_candidate_scores[b, valid_slots], 0.0)
+            denom = max(float(raw.sum()), 1e-8)
+            local_norm[np.asarray(valid_slots, dtype=np.int64)] = raw / denom
         if diversity_penalty > 0.0:
             neigh = np.where(env.current_adjacency[b] > 0.0)[0]
             neigh = neigh[neigh != b]
-            for slot in np.where(env.current_mask[b])[0].tolist():
+            for slot in valid_slots:
                 item = int(env.current_candidates[b, int(slot)])
                 overlap = sum(item in planned[int(n)] for n in neigh)
-                adjusted[slot] -= diversity_penalty * float(overlap)
-                adjusted[slot] += 0.10 * float(item in env.cache_items[b])
-                adjusted[slot] += 0.80 * float(env.current_neighbor_shortage[b, int(slot)])
+                local_keep = 0.55 + 0.75 * float(local_norm[slot]) + 0.15 * float(item in env.cache_items[b])
+                adjusted[slot] -= diversity_penalty * float(overlap) * max(0.20, 1.0 - local_keep)
+                adjusted[slot] += 0.06 * float(item in env.cache_items[b])
+                adjusted[slot] += 1.15 * float(env.current_neighbor_shortage[b, int(slot)])
+                adjusted[slot] += 0.14 * float(local_norm[slot])
+                adjusted[slot] += 0.04 * float(env.global_popularity[item])
+                adjusted[slot] += 0.08 * float(item == int(env.current_trend_items[b])) * float(env.current_trend_strength[b])
+                adjusted[slot] += 0.22 * float(env.current_neighbor_support[b, int(slot)])
+                adjusted[slot] += 0.07 * float(env.current_future_load[b]) * float(local_norm[slot])
+                adjusted[slot] += 0.18 * float(env.current_semantic_affinity[b, int(slot)])
+                adjusted[slot] += 0.12 * float(env.current_freshness_relevance[b, int(slot)])
         ranked = np.argsort(adjusted)[::-1]
         for slot in ranked.tolist():
             item = int(env.current_candidates[b, int(slot)])
@@ -188,12 +228,25 @@ def sample_cache_items(
         valid_slots = np.where(env.current_mask[b])[0].tolist()
         neigh = np.where(env.current_adjacency[b] > 0.0)[0]
         neigh = neigh[neigh != b]
+        local_norm = np.zeros((env.cfg.fp,), dtype=np.float64)
+        if valid_slots:
+            raw = np.maximum(env.current_candidate_scores[b, valid_slots], 0.0)
+            denom = max(float(raw.sum()), 1e-8)
+            local_norm[np.asarray(valid_slots, dtype=np.int64)] = raw / denom
         for slot in valid_slots:
             item = int(env.current_candidates[b, slot])
             overlap = sum(item in planned[int(n)] for n in neigh)
-            scores[slot] = scores[slot] - diversity_penalty * float(overlap)
-            scores[slot] = scores[slot] + 0.10 * float(item in env.cache_items[b])
-            scores[slot] = scores[slot] + 0.80 * float(env.current_neighbor_shortage[b, slot])
+            local_keep = 0.55 + 0.75 * float(local_norm[slot]) + 0.15 * float(item in env.cache_items[b])
+            scores[slot] = scores[slot] - diversity_penalty * float(overlap) * max(0.20, 1.0 - local_keep)
+            scores[slot] = scores[slot] + 0.06 * float(item in env.cache_items[b])
+            scores[slot] = scores[slot] + 1.15 * float(env.current_neighbor_shortage[b, slot])
+            scores[slot] = scores[slot] + 0.14 * float(local_norm[slot])
+            scores[slot] = scores[slot] + 0.04 * float(env.global_popularity[item])
+            scores[slot] = scores[slot] + 0.08 * float(item == int(env.current_trend_items[b])) * float(env.current_trend_strength[b])
+            scores[slot] = scores[slot] + 0.22 * float(env.current_neighbor_support[b, slot])
+            scores[slot] = scores[slot] + 0.07 * float(env.current_future_load[b]) * float(local_norm[slot])
+            scores[slot] = scores[slot] + 0.18 * float(env.current_semantic_affinity[b, slot])
+            scores[slot] = scores[slot] + 0.12 * float(env.current_freshness_relevance[b, slot])
 
         used_slots: set[int] = set()
         chosen: list[int] = []
@@ -328,7 +381,31 @@ def train_graph_cache_policy_imitation(
         local_hits.append(epoch_local_mean)
         paper_hits.append(epoch_paper_mean)
 
-        epoch_score = epoch_reward_mean + 500.0 * epoch_local_mean + 250.0 * epoch_paper_mean
+        if cfg.checkpoint_eval_episodes > 0:
+            eval_rows = evaluate_graph_cache_policy(
+                env,
+                model,
+                episodes=cfg.checkpoint_eval_episodes,
+                seed=seed + 200000 + epoch * 17,
+                device=cfg.device,
+                decode_diversity_penalty=cfg.decode_diversity_penalty,
+            )
+            sel_reward_mean = float(np.mean([row["reward"] for row in eval_rows]))
+            sel_local_mean = float(np.mean([row["local_hit_rate"] for row in eval_rows]))
+            sel_paper_mean = float(np.mean([row["paper_hit_rate"] for row in eval_rows]))
+        else:
+            sel_reward_mean = epoch_reward_mean
+            sel_local_mean = epoch_local_mean
+            sel_paper_mean = epoch_paper_mean
+
+        epoch_score = _selection_score(
+            sel_reward_mean,
+            sel_local_mean,
+            sel_paper_mean,
+            cfg.checkpoint_reward_weight,
+            cfg.checkpoint_local_hit_weight,
+            cfg.checkpoint_paper_hit_weight,
+        )
         if epoch_score > best_score:
             best_score = epoch_score
             best_state = copy.deepcopy(model.state_dict())
@@ -337,13 +414,16 @@ def train_graph_cache_policy_imitation(
             (epoch + 1) % max(1, log_every_epoch) == 0 or (epoch + 1) == cfg.epochs
         ):
             logger.info(
-                "Imitation epoch %d/%d summary | loss=%.6f reward=%.4f local_hit=%.4f paper_hit=%.4f best_score=%.4f",
+                "Imitation epoch %d/%d summary | loss=%.6f reward=%.4f local_hit=%.4f paper_hit=%.4f sel_reward=%.4f sel_local=%.4f sel_paper=%.4f best_score=%.4f",
                 epoch + 1,
                 cfg.epochs,
                 epoch_loss_mean,
                 epoch_reward_mean,
                 epoch_local_mean,
                 epoch_paper_mean,
+                sel_reward_mean,
+                sel_local_mean,
+                sel_paper_mean,
                 best_score,
             )
 
@@ -380,10 +460,13 @@ def fine_tune_graph_cache_policy_reinforce(
         device=cfg.device,
         decode_diversity_penalty=cfg.decode_diversity_penalty,
     )[0]
-    best_score = (
-        float(initial_eval["reward"])
-        + 500.0 * float(initial_eval["local_hit_rate"])
-        + 350.0 * float(initial_eval["paper_hit_rate"])
+    best_score = _selection_score(
+        float(initial_eval["reward"]),
+        float(initial_eval["local_hit_rate"]),
+        float(initial_eval["paper_hit_rate"]),
+        cfg.checkpoint_reward_weight,
+        cfg.checkpoint_local_hit_weight,
+        cfg.checkpoint_paper_hit_weight,
     )
     running_baseline = 0.0
 
@@ -403,6 +486,7 @@ def fine_tune_graph_cache_policy_reinforce(
             log_probs: list[torch.Tensor] = []
             entropies: list[torch.Tensor] = []
             rewards_per_step: list[float] = []
+            raw_rewards_per_step: list[float] = []
             local_per_step: list[float] = []
             paper_per_step: list[float] = []
 
@@ -415,11 +499,14 @@ def fine_tune_graph_cache_policy_reinforce(
                     diversity_penalty=cfg.decode_diversity_penalty,
                 )
                 obs, reward, done, info = env.step_full_cache_items(chosen)
+                paper_hit = float(info["local_hit_rate"] + info["neighbor_fetch_rate"])
+                shaped_reward = float(reward) + cfg.edge_hit_bonus_weight * paper_hit
                 log_probs.append(log_prob)
                 entropies.append(entropy)
-                rewards_per_step.append(float(reward))
+                rewards_per_step.append(shaped_reward)
+                raw_rewards_per_step.append(float(reward))
                 local_per_step.append(float(info["local_hit_rate"]))
-                paper_per_step.append(float(info["local_hit_rate"] + info["neighbor_fetch_rate"]))
+                paper_per_step.append(paper_hit)
 
             returns = []
             ret = 0.0
@@ -442,7 +529,7 @@ def fine_tune_graph_cache_policy_reinforce(
             opt.step()
 
             epoch_losses.append(float(loss.item()))
-            epoch_rewards.append(float(np.sum(rewards_per_step)))
+            epoch_rewards.append(float(np.sum(raw_rewards_per_step)))
             epoch_local.append(float(np.mean(local_per_step)) if local_per_step else 0.0)
             epoch_paper.append(float(np.mean(paper_per_step)) if paper_per_step else 0.0)
 
@@ -470,7 +557,31 @@ def fine_tune_graph_cache_policy_reinforce(
         local_hits.append(epoch_local_mean)
         paper_hits.append(epoch_paper_mean)
 
-        epoch_score = epoch_reward_mean + 500.0 * epoch_local_mean + 350.0 * epoch_paper_mean
+        if cfg.checkpoint_eval_episodes > 0:
+            eval_rows = evaluate_graph_cache_policy(
+                env,
+                model,
+                episodes=cfg.checkpoint_eval_episodes,
+                seed=seed + 300000 + epoch * 19,
+                device=cfg.device,
+                decode_diversity_penalty=cfg.decode_diversity_penalty,
+            )
+            sel_reward_mean = float(np.mean([row["reward"] for row in eval_rows]))
+            sel_local_mean = float(np.mean([row["local_hit_rate"] for row in eval_rows]))
+            sel_paper_mean = float(np.mean([row["paper_hit_rate"] for row in eval_rows]))
+        else:
+            sel_reward_mean = epoch_reward_mean
+            sel_local_mean = epoch_local_mean
+            sel_paper_mean = epoch_paper_mean
+
+        epoch_score = _selection_score(
+            sel_reward_mean,
+            sel_local_mean,
+            sel_paper_mean,
+            cfg.checkpoint_reward_weight,
+            cfg.checkpoint_local_hit_weight,
+            cfg.checkpoint_paper_hit_weight,
+        )
         if epoch_score > best_score:
             best_score = epoch_score
             best_state = copy.deepcopy(model.state_dict())
@@ -479,13 +590,16 @@ def fine_tune_graph_cache_policy_reinforce(
             (epoch + 1) % max(1, log_every_epoch) == 0 or (epoch + 1) == cfg.epochs
         ):
             logger.info(
-                "Reinforce epoch %d/%d summary | loss=%.6f reward=%.4f local_hit=%.4f paper_hit=%.4f best_score=%.4f",
+                "Reinforce epoch %d/%d summary | loss=%.6f reward=%.4f local_hit=%.4f paper_hit=%.4f sel_reward=%.4f sel_local=%.4f sel_paper=%.4f best_score=%.4f",
                 epoch + 1,
                 cfg.epochs,
                 epoch_loss_mean,
                 epoch_reward_mean,
                 epoch_local_mean,
                 epoch_paper_mean,
+                sel_reward_mean,
+                sel_local_mean,
+                sel_paper_mean,
                 best_score,
             )
 

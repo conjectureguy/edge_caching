@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from movie_edge_sim.data import get_movielens_dataset, load_ratings_auto
+from movie_edge_sim.data import get_movielens_dataset, load_item_genres_auto, load_ratings_auto
 from movie_edge_sim.novel_graph_policy import (
     ImitationConfig,
     ReinforceConfig,
@@ -40,6 +40,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--device", type=str, default="cpu")
     p.add_argument("--log-level", type=str, default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     p.add_argument("--temporal-checkpoint", type=Path, default=None)
+    p.add_argument("--policy-checkpoint", type=Path, default=None)
 
     p.add_argument("--window-size", type=int, default=12)
     p.add_argument("--val-ratio", type=float, default=0.1)
@@ -68,11 +69,20 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--teacher-forcing-final-prob", type=float, default=0.2)
     p.add_argument("--teacher-score-loss-weight", type=float, default=0.35)
     p.add_argument("--label-smoothing", type=float, default=0.05)
-    p.add_argument("--decode-diversity-penalty", type=float, default=0.35)
+    p.add_argument("--decode-diversity-penalty", type=float, default=0.25)
+    p.add_argument("--teacher-base-weight", type=float, default=0.45)
+    p.add_argument("--teacher-attention-weight", type=float, default=0.20)
+    p.add_argument("--teacher-mobility-weight", type=float, default=0.20)
+    p.add_argument("--teacher-ddpg-weight", type=float, default=0.15)
     p.add_argument("--disable-graph", action="store_true")
     p.add_argument("--disable-temporal", action="store_true")
     p.add_argument("--disable-mobility", action="store_true")
     p.add_argument("--disable-trend", action="store_true")
+    p.add_argument("--disable-semantic", action="store_true")
+    p.add_argument("--freshness-tau-hours", type=float, default=6.0)
+    p.add_argument("--semantic-score-weight", type=float, default=0.10)
+    p.add_argument("--semantic-future-weight", type=float, default=0.05)
+    p.add_argument("--freshness-score-weight", type=float, default=0.08)
     p.add_argument("--log-every-imitation-epoch", type=int, default=1)
     p.add_argument("--log-every-imitation-episode", type=int, default=1)
     p.add_argument("--reinforce-epochs", type=int, default=6)
@@ -91,6 +101,28 @@ def setup_logging(level_name: str) -> logging.Logger:
     level = getattr(logging, level_name.upper(), logging.INFO)
     logging.basicConfig(level=level, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
     return logging.getLogger("novel_realworld_cache")
+
+
+def load_partial_policy_state(model: torch.nn.Module, checkpoint_path: Path, device: str, logger: logging.Logger) -> None:
+    state = torch.load(checkpoint_path, map_location=device, weights_only=True)
+    current = model.state_dict()
+    matched = {}
+    skipped: list[str] = []
+    for key, value in state.items():
+        if key not in current or current[key].shape != value.shape:
+            skipped.append(key)
+            continue
+        matched[key] = value
+    current.update(matched)
+    model.load_state_dict(current)
+    logger.info(
+        "Loaded partial policy checkpoint %s | matched=%d skipped=%d",
+        checkpoint_path,
+        len(matched),
+        len(skipped),
+    )
+    if skipped:
+        logger.info("Skipped mismatched policy keys: %s", ", ".join(skipped[:8]) + (" ..." if len(skipped) > 8 else ""))
 
 
 def save_history(out_dir: Path, temporal_round_losses: list[float], temporal_val_losses: list[float], imitation_hist, reinforce_hist=None) -> None:
@@ -299,6 +331,7 @@ def main() -> None:
     logger.info("Stage 1/5: loading %s", args.dataset_name)
     dataset_dir = get_movielens_dataset(args.data_root, args.dataset_name)
     ratings = load_ratings_auto(dataset_dir)
+    item_genres, _genre_names = load_item_genres_auto(dataset_dir)
     histories = build_user_time_histories(ratings)
     logger.info("Dataset ready | dataset=%s ratings=%d users=%d", args.dataset_name, len(ratings), len(histories))
 
@@ -373,12 +406,21 @@ def main() -> None:
         window_size=args.window_size,
         episode_len=args.episode_len,
         grid_size=args.grid_size,
+        teacher_base_weight=args.teacher_base_weight,
+        teacher_attention_weight=args.teacher_attention_weight,
+        teacher_mobility_weight=args.teacher_mobility_weight,
+        teacher_ddpg_weight=args.teacher_ddpg_weight,
         use_temporal_features=not args.disable_temporal,
         use_mobility_features=not args.disable_mobility,
         use_trend_features=not args.disable_trend,
+        use_semantic_features=not args.disable_semantic,
+        freshness_tau_hours=args.freshness_tau_hours,
+        semantic_score_weight=args.semantic_score_weight,
+        semantic_future_weight=args.semantic_future_weight,
+        freshness_score_weight=args.freshness_score_weight,
         seed=args.seed,
     )
-    env = NovelRealWorldCachingEnv(env_cfg, temporal_model, histories)
+    env = NovelRealWorldCachingEnv(env_cfg, temporal_model, histories, item_genres=item_genres)
     obs = env.reset(seed=args.seed)
     node_dim = int(obs["node_features"].shape[1])
     cand_dim = int(obs["candidate_features"].shape[2])
@@ -392,6 +434,9 @@ def main() -> None:
         fp=args.fp,
         use_graph=not args.disable_graph,
     )
+    if args.policy_checkpoint is not None:
+        logger.info("Loading policy checkpoint %s", args.policy_checkpoint)
+        load_partial_policy_state(policy, args.policy_checkpoint, args.device, logger)
     imit_cfg = ImitationConfig(
         epochs=args.imitation_epochs,
         episodes_per_epoch=args.episodes_per_epoch,
@@ -463,7 +508,7 @@ def main() -> None:
     save_eval(args.output_dir, "temporal_graph", learned_rows)
 
     summary_lines = [
-        f"Ablations: graph={'off' if args.disable_graph else 'on'} temporal={'off' if args.disable_temporal else 'on'} mobility={'off' if args.disable_mobility else 'on'} trend={'off' if args.disable_trend else 'on'} teacher_score_loss_weight={args.teacher_score_loss_weight:.3f} decode_diversity_penalty={args.decode_diversity_penalty:.3f}",
+        f"Ablations: graph={'off' if args.disable_graph else 'on'} temporal={'off' if args.disable_temporal else 'on'} mobility={'off' if args.disable_mobility else 'on'} trend={'off' if args.disable_trend else 'on'} semantic={'off' if args.disable_semantic else 'on'} teacher_score_loss_weight={args.teacher_score_loss_weight:.3f} decode_diversity_penalty={args.decode_diversity_penalty:.3f}",
         f"Reinforce: epochs={args.reinforce_epochs} episodes_per_epoch={args.reinforce_episodes_per_epoch} lr={args.reinforce_lr:.6f} gamma={args.reinforce_gamma:.3f} entropy_weight={args.reinforce_entropy_weight:.6f}",
         summarize("Random", random_rows),
         summarize("BSG-like", bsg_rows),

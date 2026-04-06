@@ -36,9 +36,19 @@ class RealWorldEnvConfig:
     trend_decay: float = 0.85
     teacher_diversity_penalty: float = 0.45
     teacher_locality_bonus: float = 1.1
+    teacher_use_ensemble: bool = True
+    teacher_base_weight: float = 0.45
+    teacher_attention_weight: float = 0.20
+    teacher_mobility_weight: float = 0.20
+    teacher_ddpg_weight: float = 0.15
     use_temporal_features: bool = True
     use_mobility_features: bool = True
     use_trend_features: bool = True
+    use_semantic_features: bool = True
+    freshness_tau_hours: float = 6.0
+    semantic_score_weight: float = 0.10
+    semantic_future_weight: float = 0.05
+    freshness_score_weight: float = 0.08
     seed: int = 42
 
 
@@ -48,6 +58,7 @@ class NovelRealWorldCachingEnv:
         cfg: RealWorldEnvConfig,
         temporal_model: RealWorldTemporalEncoder,
         histories: dict[int, UserTimeHistory],
+        item_genres: np.ndarray | None = None,
     ) -> None:
         self.cfg = cfg
         self.temporal_model = temporal_model.eval()
@@ -57,6 +68,16 @@ class NovelRealWorldCachingEnv:
         self._embed_weight = self.temporal_model.embed.weight.detach().to(self._device)
         self.embed_dim = int(self._embed_weight.shape[1])
         self.num_items = int(self.temporal_model.num_items)
+        if item_genres is None or item_genres.size == 0:
+            self.item_genres = np.zeros((self.num_items + 1, 1), dtype=np.float32)
+        else:
+            trimmed = item_genres[: self.num_items + 1]
+            if trimmed.shape[0] < self.num_items + 1:
+                pad = np.zeros((self.num_items + 1 - trimmed.shape[0], trimmed.shape[1]), dtype=trimmed.dtype)
+                trimmed = np.concatenate([trimmed, pad], axis=0)
+            row_sums = np.maximum(trimmed.sum(axis=1, keepdims=True), 1e-8)
+            self.item_genres = (trimmed / row_sums).astype(np.float32)
+        self.num_genres = int(self.item_genres.shape[1])
 
         eligible = [u for u, h in histories.items() if len(h.items) > cfg.window_size + 5]
         if len(eligible) < cfg.n_ues:
@@ -84,6 +105,8 @@ class NovelRealWorldCachingEnv:
         self.current_trend_strength = np.zeros((cfg.n_sbs,), dtype=np.float64)
         self.current_future_load = np.zeros((cfg.n_sbs,), dtype=np.float64)
         self.current_sbs_velocity = np.zeros((cfg.n_sbs, 2), dtype=np.float64)
+        self.current_semantic_affinity = np.zeros((cfg.n_sbs, cfg.fp), dtype=np.float64)
+        self.current_freshness_relevance = np.zeros((cfg.n_sbs, cfg.fp), dtype=np.float64)
 
         self.ue_context_items = np.zeros((cfg.n_ues, cfg.window_size), dtype=np.int64)
         self.ue_context_deltas = np.zeros((cfg.n_ues, cfg.window_size), dtype=np.float32)
@@ -93,6 +116,59 @@ class NovelRealWorldCachingEnv:
         self.last_active_mask = np.zeros((cfg.n_ues,), dtype=bool)
         self._cached_obs: dict[str, np.ndarray] | None = None
         self._cached_temporal_probs: np.ndarray | None = None
+
+    def _select_candidate_pool(
+        self,
+        score: np.ndarray,
+        temporal_scores: np.ndarray,
+        recent_scores: np.ndarray,
+        future_scores: np.ndarray,
+        cache_items: np.ndarray,
+        trend_item: int,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        fp = self.cfg.fp
+        score = score.copy()
+        score[0] = 0.0
+        temporal_scores = temporal_scores.copy()
+        temporal_scores[0] = 0.0
+        recent_scores = recent_scores.copy()
+        recent_scores[0] = 0.0
+        future_scores = future_scores.copy()
+        future_scores[0] = 0.0
+
+        top_score = np.argsort(score[1:])[-fp:][::-1] + 1
+        top_temporal = np.argsort(temporal_scores[1:])[-max(self.cfg.cache_capacity, fp // 3) :][::-1] + 1
+        top_recent = np.argsort(recent_scores[1:])[-max(self.cfg.cache_capacity, fp // 4) :][::-1] + 1
+        top_future = np.argsort(future_scores[1:])[-max(4, fp // 5) :][::-1] + 1
+        top_pop = np.argsort(self.global_popularity[1:])[-max(4, self.cfg.cache_capacity // 2) :][::-1] + 1
+
+        candidate_pool: set[int] = set(int(item) for item in top_score.tolist())
+        candidate_pool.update(int(item) for item in top_temporal.tolist())
+        candidate_pool.update(int(item) for item in top_recent.tolist())
+        candidate_pool.update(int(item) for item in top_future.tolist())
+        candidate_pool.update(int(item) for item in top_pop.tolist())
+        candidate_pool.update(int(item) for item in cache_items.tolist() if int(item) > 0)
+        if trend_item > 0:
+            candidate_pool.add(int(trend_item))
+
+        pool = np.asarray(sorted(candidate_pool), dtype=np.int64)
+        if pool.size == 0:
+            return np.zeros((0,), dtype=np.int64), np.zeros((0,), dtype=np.float64)
+
+        score_scale = max(float(np.max(score[pool])), 1e-8)
+        rescue_bonus = np.zeros((pool.shape[0],), dtype=np.float64)
+        rescue_bonus += 0.10 * score_scale * np.isin(pool, top_temporal)
+        rescue_bonus += 0.09 * score_scale * np.isin(pool, top_recent)
+        rescue_bonus += 0.07 * score_scale * np.isin(pool, top_future)
+        rescue_bonus += 0.05 * score_scale * np.isin(pool, cache_items)
+        if trend_item > 0:
+            rescue_bonus += 0.04 * score_scale * (pool == int(trend_item))
+
+        pooled_scores = score[pool] + rescue_bonus
+        order = np.argsort(pooled_scores)[::-1]
+        chosen = pool[order[:fp]]
+        chosen_scores = pooled_scores[order[:fp]]
+        return chosen, chosen_scores
 
     def _build_global_popularity(self) -> np.ndarray:
         popularity = np.zeros((self.num_items + 1,), dtype=np.float64)
@@ -231,6 +307,32 @@ class NovelRealWorldCachingEnv:
             self._cached_temporal_probs = probs.detach().cpu().numpy().astype(np.float64)
         return self._cached_temporal_probs[ue_indices]
 
+    def _freshness_weights(self, ue_indices: np.ndarray) -> np.ndarray:
+        if ue_indices.size == 0:
+            return np.zeros((0,), dtype=np.float64)
+        if not self.cfg.use_temporal_features:
+            return np.ones((ue_indices.size,), dtype=np.float64)
+        last_deltas = np.expm1(self.ue_context_deltas[ue_indices, -1].astype(np.float64))
+        weights = np.exp(-last_deltas / max(1e-6, self.cfg.freshness_tau_hours))
+        return np.clip(weights, 0.05, 1.0)
+
+    def _semantic_profile(self, ue_indices: np.ndarray) -> np.ndarray:
+        if ue_indices.size == 0 or not self.cfg.use_semantic_features:
+            return np.zeros((self.num_genres,), dtype=np.float64)
+        profile = np.zeros((self.num_genres,), dtype=np.float64)
+        freshness = self._freshness_weights(ue_indices)
+        recency_kernel = np.linspace(0.55, 1.0, self.cfg.window_size, dtype=np.float64)
+        for idx, ue in enumerate(ue_indices.tolist()):
+            items = self.ue_context_items[int(ue)]
+            for pos, item in enumerate(items.tolist()):
+                if item <= 0 or item >= self.item_genres.shape[0]:
+                    continue
+                profile += freshness[idx] * recency_kernel[pos] * self.item_genres[item]
+        total = float(profile.sum())
+        if total <= 1e-8:
+            return profile
+        return profile / total
+
     def _refresh_trends(self, association: np.ndarray) -> None:
         if not self.cfg.use_trend_features:
             self.current_trend_items.fill(0)
@@ -309,50 +411,92 @@ class NovelRealWorldCachingEnv:
         self.current_candidates.fill(0)
         self.current_candidate_scores.fill(0.0)
         self.current_mask.fill(False)
+        self.current_semantic_affinity.fill(0.0)
+        self.current_freshness_relevance.fill(0.0)
         for b in range(self.cfg.n_sbs):
             ue_idx = np.where(association == b)[0]
             future_ue_idx = np.where(future_association == b)[0]
             probs = self._temporal_probs_for_ues(ue_idx)
             future_probs = self._temporal_probs_for_ues(future_ue_idx)
+            current_freshness = self._freshness_weights(ue_idx)
+            future_freshness = self._freshness_weights(future_ue_idx)
+            current_profile = self._semantic_profile(ue_idx)
+            future_profile = self._semantic_profile(future_ue_idx)
+            active_recent = np.zeros((self.num_items + 1,), dtype=np.float64)
+            agg = np.zeros((self.num_items + 1,), dtype=np.float64)
+            future_agg = np.zeros((self.num_items + 1,), dtype=np.float64)
+            trend_item = int(self.current_trend_items[b])
             if probs.shape[0] == 0 and not self.cfg.use_temporal_features:
                 active_recent = np.bincount(self.ue_context_items[ue_idx, -1], minlength=self.num_items + 1).astype(np.float64)
                 active_recent /= max(active_recent.sum(), 1.0)
                 trend = np.zeros((self.num_items + 1,), dtype=np.float64)
-                trend_item = int(self.current_trend_items[b])
                 if self.cfg.use_trend_features and trend_item > 0:
                     trend[trend_item] = float(self.current_trend_strength[b])
-                score = 0.70 * active_recent + 0.20 * self.global_popularity + 0.10 * trend
-                top = np.argsort(score[1:])[-self.cfg.fp :][::-1] + 1
-                scores = score[top]
+                semantic = np.zeros((self.num_items + 1,), dtype=np.float64)
+                if self.cfg.use_semantic_features and np.any(current_profile):
+                    semantic = self.item_genres @ current_profile
+                score = 0.62 * active_recent + 0.18 * self.global_popularity + 0.10 * trend + self.cfg.semantic_score_weight * semantic
             elif probs.shape[0] == 0:
-                top = np.argsort(self.global_popularity[1:])[-self.cfg.fp :][::-1] + 1
-                scores = self.global_popularity[top]
+                score = self.global_popularity.copy()
             else:
-                agg = probs.sum(axis=0)
+                if current_freshness.size > 0:
+                    agg = (probs * current_freshness[:, None]).sum(axis=0)
+                else:
+                    agg = probs.sum(axis=0)
                 agg[0] = 0.0
-                active_recent = np.bincount(self.ue_context_items[ue_idx, -1], minlength=self.num_items + 1).astype(np.float64)
+                recent_items = self.ue_context_items[ue_idx, -3:].reshape(-1) if ue_idx.size > 0 else np.zeros((0,), dtype=np.int64)
+                if recent_items.size > 0:
+                    recent_weights = np.repeat(np.maximum(current_freshness, 1e-6), 3) * np.tile(np.asarray([0.6, 0.8, 1.0], dtype=np.float64), len(ue_idx))
+                    active_recent = np.bincount(recent_items, weights=recent_weights, minlength=self.num_items + 1).astype(np.float64)
+                else:
+                    active_recent = np.zeros((self.num_items + 1,), dtype=np.float64)
                 active_recent /= max(active_recent.sum(), 1.0)
-                future_agg = np.zeros((self.num_items + 1,), dtype=np.float64)
                 if self.cfg.use_mobility_features and future_probs.shape[0] > 0:
-                    future_agg = future_probs.sum(axis=0)
+                    if future_freshness.size > 0:
+                        future_agg = (future_probs * future_freshness[:, None]).sum(axis=0)
+                    else:
+                        future_agg = future_probs.sum(axis=0)
                     future_agg[0] = 0.0
                 trend = np.zeros((self.num_items + 1,), dtype=np.float64)
-                trend_item = int(self.current_trend_items[b])
                 if self.cfg.use_trend_features and trend_item > 0:
                     trend[trend_item] = float(self.current_trend_strength[b])
+                semantic = np.zeros((self.num_items + 1,), dtype=np.float64)
+                if self.cfg.use_semantic_features and np.any(current_profile):
+                    semantic += self.item_genres @ current_profile
+                if self.cfg.use_semantic_features and np.any(future_profile):
+                    semantic += self.cfg.semantic_future_weight * (self.item_genres @ future_profile)
+                freshness_recent = active_recent.copy()
+                current_strength = 0.50 + 0.10 * float(np.mean(current_freshness)) if current_freshness.size > 0 else 0.45
+                future_strength = (0.10 + 0.10 * float(np.mean(future_freshness))) if future_freshness.size > 0 else 0.0
                 score = (
-                    0.50 * agg
-                    + 0.20 * active_recent
-                    + (0.15 * future_agg if self.cfg.use_mobility_features else 0.0)
+                    current_strength * agg
+                    + 0.18 * active_recent
+                    + (future_strength * future_agg if self.cfg.use_mobility_features else 0.0)
                     + 0.10 * self.global_popularity
                     + (0.05 * trend if self.cfg.use_trend_features else 0.0)
+                    + (self.cfg.semantic_score_weight * semantic if self.cfg.use_semantic_features else 0.0)
+                    + self.cfg.freshness_score_weight * freshness_recent
                 )
-                top = np.argsort(score[1:])[-self.cfg.fp :][::-1] + 1
-                scores = score[top]
+            top, scores = self._select_candidate_pool(
+                score=score,
+                temporal_scores=agg,
+                recent_scores=active_recent,
+                future_scores=future_agg,
+                cache_items=self.cache_items[b],
+                trend_item=trend_item,
+            )
             valid = min(self.cfg.fp, top.shape[0])
             self.current_candidates[b, :valid] = top[:valid]
             self.current_candidate_scores[b, :valid] = scores[:valid]
             self.current_mask[b, :valid] = True
+            if valid > 0:
+                items = top[:valid]
+                if self.cfg.use_semantic_features and np.any(current_profile):
+                    self.current_semantic_affinity[b, :valid] = (self.item_genres[items] @ current_profile).astype(np.float64)
+                fresh_vals = active_recent[items]
+                if np.any(fresh_vals):
+                    fresh_vals = fresh_vals / max(float(np.max(fresh_vals)), 1e-8)
+                self.current_freshness_relevance[b, :valid] = fresh_vals
 
     def _build_node_features(self, association: np.ndarray, sbs_positions: np.ndarray) -> np.ndarray:
         feat_dim = 9 + 2 * self.embed_dim
@@ -387,7 +531,7 @@ class NovelRealWorldCachingEnv:
         return features
 
     def _build_candidate_features(self) -> np.ndarray:
-        feat_dim = self.embed_dim + 8
+        feat_dim = self.embed_dim + 10
         features = np.zeros((self.cfg.n_sbs, self.cfg.fp, feat_dim), dtype=np.float32)
         self.current_neighbor_support.fill(0.0)
         self.current_neighbor_shortage.fill(0.0)
@@ -428,7 +572,9 @@ class NovelRealWorldCachingEnv:
                 features[b, slot, 5] = float(self.current_future_load[b]) if self.cfg.use_mobility_features else 0.0
                 features[b, slot, 6] = float(neighbor_support)
                 features[b, slot, 7] = float(shortage)
-                features[b, slot, 8:] = item_emb[idx]
+                features[b, slot, 8] = float(self.current_semantic_affinity[b, slot])
+                features[b, slot, 9] = float(self.current_freshness_relevance[b, slot])
+                features[b, slot, 10:] = item_emb[idx]
         return features
 
     def _build_observation(self) -> dict[str, np.ndarray]:
@@ -453,10 +599,11 @@ class NovelRealWorldCachingEnv:
         return self._cached_obs
 
     def _teacher_scores_and_actions(self) -> tuple[np.ndarray, np.ndarray]:
-        scores = np.full((self.cfg.n_sbs, self.cfg.fp), -1e9, dtype=np.float32)
+        scores_all = np.full((self.cfg.n_sbs, self.cfg.fp), -1e9, dtype=np.float32)
         actions = np.zeros((self.cfg.n_sbs, self.cfg.cache_capacity), dtype=np.int64)
         planned: list[set[int]] = [set() for _ in range(self.cfg.n_sbs)]
         order = np.argsort(self.current_candidate_scores.sum(axis=1))[::-1]
+        cand_all = self._build_candidate_features() if self.cfg.teacher_use_ensemble else None
         for b in order.tolist():
             neigh = np.where(self.current_adjacency[b] > 0.0)[0]
             neigh = neigh[neigh != b]
@@ -472,10 +619,53 @@ class NovelRealWorldCachingEnv:
                     + 0.20 * trend_bonus
                     - self.cfg.teacher_diversity_penalty * float(overlap)
                     + 0.20 * in_cache
+                    + 0.16 * float(self.current_semantic_affinity[b, slot])
+                    + 0.12 * float(self.current_freshness_relevance[b, slot])
                 )
-                scores[b, slot] = float(score)
+                scores_all[b, slot] = float(score)
 
-            ranked = np.argsort(scores[b])[::-1]
+            row_scores = scores_all[b].copy()
+            if self.cfg.teacher_use_ensemble:
+                cand = cand_all[b]
+                attn_scores = np.full((self.cfg.fp,), -1e9, dtype=np.float32)
+                mobility_scores = np.full((self.cfg.fp,), -1e9, dtype=np.float32)
+                ddpg_scores = np.full((self.cfg.fp,), -1e9, dtype=np.float32)
+                for slot in np.where(self.current_mask[b])[0].tolist():
+                    attn_scores[slot] = float(
+                        0.40 * cand[slot, 0]
+                        + 0.15 * cand[slot, 3]
+                        + 0.12 * cand[slot, 6]
+                        + 0.08 * cand[slot, 7]
+                        + 0.10 * cand[slot, 8]
+                        + 0.10 * cand[slot, 1]
+                        - 0.18 * cand[slot, 2]
+                    )
+                    mobility_scores[slot] = float(
+                        0.32 * cand[slot, 0]
+                        + 0.18 * cand[slot, 5]
+                        + 0.10 * cand[slot, 4]
+                        + 0.12 * cand[slot, 7]
+                        + 0.10 * cand[slot, 9]
+                        + 0.08 * cand[slot, 1]
+                        - 0.16 * cand[slot, 2]
+                    )
+                    ddpg_scores[slot] = float(
+                        0.45 * cand[slot, 0]
+                        + 0.14 * cand[slot, 3]
+                        + 0.10 * cand[slot, 7]
+                        + 0.08 * cand[slot, 8]
+                        + 0.06 * cand[slot, 1]
+                        - 0.15 * cand[slot, 2]
+                    )
+                row_scores = (
+                    self.cfg.teacher_base_weight * scores_all[b]
+                    + self.cfg.teacher_attention_weight * attn_scores
+                    + self.cfg.teacher_mobility_weight * mobility_scores
+                    + self.cfg.teacher_ddpg_weight * ddpg_scores
+                )
+                scores_all[b] = row_scores
+
+            ranked = np.argsort(row_scores)[::-1]
             chosen = []
             seen: set[int] = set()
             for slot in ranked.tolist():
@@ -497,7 +687,7 @@ class NovelRealWorldCachingEnv:
                         break
             actions[b] = np.asarray(chosen[: self.cfg.cache_capacity], dtype=np.int64)
             planned[b] = set(actions[b].tolist())
-        return scores, actions
+        return scores_all, actions
 
     def cooperative_teacher_action(self) -> np.ndarray:
         _, actions = self._teacher_scores_and_actions()

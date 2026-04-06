@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from movie_edge_sim.data import get_movielens_dataset, load_ratings_auto
+from movie_edge_sim.data import get_movielens_dataset, load_item_genres_auto, load_ratings_auto
 from movie_edge_sim.novel_graph_policy import TemporalGraphCooperativePolicy, _obs_to_tensors, logits_to_cache_items
 from movie_edge_sim.novel_realworld_env import NovelRealWorldCachingEnv, RealWorldEnvConfig
 from movie_edge_sim.temporal_realworld import RealWorldTemporalEncoder, build_user_time_histories
@@ -77,7 +77,9 @@ def parse_args() -> BundleConfig:
 
 
 def load_histories_and_temporal(cfg: BundleConfig):
-    ratings = load_ratings_auto(get_movielens_dataset(cfg.data_root, cfg.dataset_name))
+    dataset_dir = get_movielens_dataset(cfg.data_root, cfg.dataset_name)
+    ratings = load_ratings_auto(dataset_dir)
+    item_genres, _genre_names = load_item_genres_auto(dataset_dir)
     histories = build_user_time_histories(ratings)
     max_user = max(histories.keys())
     max_item = max(max(hist.items) for hist in histories.values())
@@ -91,7 +93,7 @@ def load_histories_and_temporal(cfg: BundleConfig):
     )
     temporal.load_state_dict(torch.load(cfg.run_dir / "realworld_temporal_encoder.pt", map_location=cfg.device, weights_only=True))
     temporal.eval()
-    return histories, temporal
+    return histories, temporal, item_genres
 
 
 def infer_hidden_dim(run_dir: Path) -> int:
@@ -99,7 +101,7 @@ def infer_hidden_dim(run_dir: Path) -> int:
     return int(state["gat1.proj.weight"].shape[0])
 
 
-def build_env_and_model(cfg: BundleConfig, histories, temporal_model, n_sbs: int, cache_capacity: int):
+def build_env_and_model(cfg: BundleConfig, histories, temporal_model, item_genres, n_sbs: int, cache_capacity: int):
     env_cfg = RealWorldEnvConfig(
         n_sbs=n_sbs,
         n_ues=cfg.n_ues,
@@ -110,7 +112,7 @@ def build_env_and_model(cfg: BundleConfig, histories, temporal_model, n_sbs: int
         grid_size=cfg.grid_size,
         seed=cfg.seed,
     )
-    env = NovelRealWorldCachingEnv(env_cfg, temporal_model, histories)
+    env = NovelRealWorldCachingEnv(env_cfg, temporal_model, histories, item_genres=item_genres)
     obs = env.reset(seed=cfg.seed)
     hidden_dim = infer_hidden_dim(cfg.run_dir)
     model = TemporalGraphCooperativePolicy(
@@ -406,12 +408,12 @@ def main() -> None:
     cfg = parse_args()
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
     print("Loading histories and temporal model...", flush=True)
-    histories, temporal_model = load_histories_and_temporal(cfg)
+    histories, temporal_model, item_genres = load_histories_and_temporal(cfg)
 
     capacity_rows = []
     for cap in cfg.cache_capacities:
         print(f"Capacity sweep | C={cap}", flush=True)
-        env, model = build_env_and_model(cfg, histories, temporal_model, n_sbs=cfg.sbs_list[0], cache_capacity=cap)
+        env, model = build_env_and_model(cfg, histories, temporal_model, item_genres, n_sbs=cfg.sbs_list[0], cache_capacity=cap)
         random_rows = eval_random(env, cfg.eval_episodes, seed=cfg.seed + 100)
         bsg_rows = eval_bsg(env, cfg.eval_episodes, seed=cfg.seed + 200)
         ceps_rows = eval_c_epsilon_greedy(env, cfg.eval_episodes, seed=cfg.seed + 300)
@@ -423,7 +425,7 @@ def main() -> None:
     sbs_rows = []
     for n_sbs in cfg.sbs_list:
         print(f"SBS sweep | n_sbs={n_sbs}", flush=True)
-        env, model = build_env_and_model(cfg, histories, temporal_model, n_sbs=n_sbs, cache_capacity=cfg.cache_capacities[1 if len(cfg.cache_capacities) > 1 else 0])
+        env, model = build_env_and_model(cfg, histories, temporal_model, item_genres, n_sbs=n_sbs, cache_capacity=cfg.cache_capacities[1 if len(cfg.cache_capacities) > 1 else 0])
         random_rows = eval_random(env, cfg.eval_episodes, seed=cfg.seed + 500)
         bsg_rows = eval_bsg(env, cfg.eval_episodes, seed=cfg.seed + 600)
         ceps_rows = eval_c_epsilon_greedy(env, cfg.eval_episodes, seed=cfg.seed + 700)
@@ -433,7 +435,7 @@ def main() -> None:
             sbs_rows.append({"n_sbs": float(n_sbs), "model": name, **summary})
 
     print("Collecting trace metrics for cost/overlap...", flush=True)
-    env, model = build_env_and_model(cfg, histories, temporal_model, n_sbs=cfg.sbs_list[0], cache_capacity=cfg.cache_capacities[1 if len(cfg.cache_capacities) > 1 else 0])
+    env, model = build_env_and_model(cfg, histories, temporal_model, item_genres, n_sbs=cfg.sbs_list[0], cache_capacity=cfg.cache_capacities[1 if len(cfg.cache_capacities) > 1 else 0])
     ceps_policy = CEpsPolicy()
     _, random_costs, random_trace = eval_action_policy(env, random_action, cfg.eval_episodes, seed=cfg.seed + 900)
     _, bsg_costs, bsg_trace = eval_action_policy(env, bsg_action, cfg.eval_episodes, seed=cfg.seed + 1000)
@@ -442,7 +444,7 @@ def main() -> None:
 
     print("Collecting burst-adaptation traces...", flush=True)
     burst_window = (cfg.episode_len // 3, 2 * cfg.episode_len // 3)
-    burst_env, burst_model = build_env_and_model(cfg, histories, temporal_model, n_sbs=cfg.sbs_list[0], cache_capacity=cfg.cache_capacities[1 if len(cfg.cache_capacities) > 1 else 0])
+    burst_env, burst_model = build_env_and_model(cfg, histories, temporal_model, item_genres, n_sbs=cfg.sbs_list[0], cache_capacity=cfg.cache_capacities[1 if len(cfg.cache_capacities) > 1 else 0])
     burst_random = burst_trace(burst_env, random_action, 1, cfg.seed + 1300, burst_window)
     burst_bsg = burst_trace(burst_env, bsg_action, 1, cfg.seed + 1400, burst_window)
     ceps_burst_policy = CEpsPolicy()
