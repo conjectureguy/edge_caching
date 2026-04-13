@@ -1,0 +1,7 @@
+Ablations: graph=on temporal=on mobility=on trend=on semantic=on teacher_score_loss_weight=0.350 decode_diversity_penalty=0.250
+Reinforce: epochs=0 episodes_per_epoch=4 lr=0.000100 gamma=0.990 entropy_weight=0.001000
+Random: reward_mean=-25.5000 local_hit_mean=0.0000 paper_hit_mean=0.0000
+BSG-like: reward_mean=-3.2000 local_hit_mean=0.0000 paper_hit_mean=0.0000
+C-epsilon-greedy: reward_mean=-3.0000 local_hit_mean=0.1250 paper_hit_mean=0.1250
+Teacher: reward_mean=20.0000 local_hit_mean=0.5000 paper_hit_mean=0.5000
+TemporalGraph: reward_mean=27.9000 local_hit_mean=0.4792 paper_hit_mean=0.4792

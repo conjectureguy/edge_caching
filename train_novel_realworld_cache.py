@@ -25,6 +25,7 @@ from movie_edge_sim.temporal_realworld import (
     build_user_time_histories,
     chronological_train_val_split,
     grouped_indices_by_user,
+    load_compatible_temporal_state,
     train_realworld_temporal_encoder_federated,
 )
 
@@ -52,7 +53,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--local-epochs", type=int, default=1)
     p.add_argument("--temporal-batch-size", type=int, default=64)
     p.add_argument("--temporal-lr", type=float, default=1e-3)
+    p.add_argument("--temporal-weight-decay", type=float, default=1e-5)
     p.add_argument("--elastic-tau", type=float, default=2.0)
+    p.add_argument("--temporal-mask-prob", type=float, default=0.20)
+    p.add_argument("--temporal-mlm-weight", type=float, default=0.35)
+    p.add_argument("--temporal-contrastive-weight", type=float, default=0.10)
+    p.add_argument("--temporal-contrastive-temperature", type=float, default=0.20)
 
     p.add_argument("--n-sbs", type=int, default=8)
     p.add_argument("--n-ues", type=int, default=220)
@@ -364,7 +370,12 @@ def main() -> None:
             local_epochs=args.local_epochs,
             batch_size=args.temporal_batch_size,
             lr=args.temporal_lr,
+            weight_decay=args.temporal_weight_decay,
             elastic_tau=args.elastic_tau,
+            mask_prob=args.temporal_mask_prob,
+            mlm_weight=args.temporal_mlm_weight,
+            contrastive_weight=args.temporal_contrastive_weight,
+            contrastive_temperature=args.temporal_contrastive_temperature,
             seed=args.seed,
             device=args.device,
         )
@@ -394,7 +405,12 @@ def main() -> None:
             num_heads=args.num_heads,
         ).to(args.device)
         state = torch.load(args.temporal_checkpoint, map_location=args.device, weights_only=True)
-        temporal_model.load_state_dict(state)
+        load_compatible_temporal_state(
+            temporal_model,
+            state,
+            logger=logger,
+            source=str(args.temporal_checkpoint),
+        )
         temporal_model.eval()
 
     logger.info("Stage 4/5: building novel real-world caching environment")

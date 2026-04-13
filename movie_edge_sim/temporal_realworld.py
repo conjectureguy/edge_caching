@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 from torch import nn
+from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset, Subset
 
 
@@ -175,7 +176,15 @@ class RealWorldTemporalEncoder(nn.Module):
         self.user_embed = nn.Embedding(num_users + 1, embed_dim)
         self.hour_embed = nn.Embedding(24, embed_dim)
         self.time2vec = Time2Vec(embed_dim)
+        self.mask_token = nn.Parameter(torch.zeros(embed_dim))
         self.pos_embed = nn.Parameter(torch.zeros(1, window_size, embed_dim))
+        self.log_taus = nn.Parameter(torch.log(torch.as_tensor([0.5, 2.0, 8.0, 24.0], dtype=torch.float32)))
+        self.temporal_kernel_proj = nn.Sequential(
+            nn.Linear(2 + 2 * self.log_taus.numel(), hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, embed_dim),
+        )
+        self.input_norm = nn.LayerNorm(embed_dim)
         enc_layer = nn.TransformerEncoderLayer(
             d_model=embed_dim,
             nhead=num_heads,
@@ -185,16 +194,102 @@ class RealWorldTemporalEncoder(nn.Module):
             activation="gelu",
         )
         self.transformer = nn.TransformerEncoder(enc_layer, num_layers=2)
+        self.local_pattern_mixer = nn.Sequential(
+            nn.Conv1d(embed_dim, embed_dim, kernel_size=3, padding=1),
+            nn.GELU(),
+            nn.Conv1d(embed_dim, embed_dim, kernel_size=1),
+        )
         self.gru = nn.GRU(embed_dim, hidden_dim, batch_first=True)
         self.attn = nn.Linear(hidden_dim, 1)
+        self.token_proj = nn.Sequential(
+            nn.Linear(hidden_dim, embed_dim),
+            nn.GELU(),
+            nn.LayerNorm(embed_dim),
+        )
         self.proj = nn.Sequential(
-            nn.Linear(hidden_dim + embed_dim, hidden_dim),
+            nn.Linear(3 * hidden_dim + embed_dim, hidden_dim),
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, embed_dim),
             nn.GELU(),
         )
-        self.out = nn.Linear(embed_dim, num_items + 1)
+        self.output_norm = nn.LayerNorm(embed_dim)
+        self.output_bias = nn.Parameter(torch.zeros(num_items + 1))
+        self.contrast_proj = nn.Sequential(
+            nn.Linear(embed_dim, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, embed_dim),
+        )
+        self.dropout = nn.Dropout(dropout)
+
+    def _ages_from_deltas(self, context_deltas: torch.Tensor) -> torch.Tensor:
+        delta_hours = torch.expm1(context_deltas.clamp_min(0.0))
+        if context_deltas.shape[1] <= 1:
+            return torch.zeros_like(context_deltas)
+        suffix = torch.flip(torch.cumsum(torch.flip(delta_hours[:, 1:], dims=[1]), dim=1), dims=[1])
+        zeros = torch.zeros((context_deltas.shape[0], 1), dtype=context_deltas.dtype, device=context_deltas.device)
+        return torch.cat([suffix, zeros], dim=1)
+
+    def _temporal_kernel_embedding(self, context_deltas: torch.Tensor) -> torch.Tensor:
+        ages = self._ages_from_deltas(context_deltas)
+        taus = torch.exp(self.log_taus).view(1, 1, -1)
+        delta_hours = torch.expm1(context_deltas.clamp_min(0.0))
+        gap_kernel = torch.exp(-delta_hours.unsqueeze(-1) / taus)
+        age_kernel = torch.exp(-ages.unsqueeze(-1) / taus)
+        raw = torch.cat(
+            [
+                context_deltas.unsqueeze(-1),
+                torch.log1p(ages).unsqueeze(-1),
+                gap_kernel,
+                age_kernel,
+            ],
+            dim=-1,
+        )
+        return self.temporal_kernel_proj(raw)
+
+    def _last_valid_hidden(self, seq: torch.Tensor, padding_mask: torch.Tensor) -> torch.Tensor:
+        valid_counts = (~padding_mask).sum(dim=1).clamp(min=1)
+        last_idx = valid_counts - 1
+        batch_idx = torch.arange(seq.shape[0], device=seq.device)
+        return seq[batch_idx, last_idx]
+
+    def _sequence_forward(
+        self,
+        context_items: torch.Tensor,
+        context_deltas: torch.Tensor,
+        context_hours: torch.Tensor,
+        user_ids: torch.Tensor,
+        mask_positions: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        padding_mask = context_items <= 0
+        item_emb = self.embed(context_items)
+        if mask_positions is not None:
+            item_emb = torch.where(mask_positions.unsqueeze(-1), self.mask_token.view(1, 1, -1), item_emb)
+        hour_emb = self.hour_embed(context_hours.clamp(min=0, max=23))
+        delta_emb = self.time2vec(context_deltas.unsqueeze(-1))
+        kernel_emb = self._temporal_kernel_embedding(context_deltas)
+        user_emb = self.user_embed(user_ids).unsqueeze(1)
+        x = item_emb + hour_emb + delta_emb + kernel_emb + user_emb + self.pos_embed[:, : context_items.shape[1], :]
+        x = self.input_norm(x)
+        x = self.transformer(x, src_key_padding_mask=padding_mask)
+        local = self.local_pattern_mixer(x.transpose(1, 2)).transpose(1, 2)
+        x = x + self.dropout(local)
+        x, _ = self.gru(x)
+
+        attn_logits = self.attn(x).squeeze(-1).masked_fill(padding_mask, -1e9)
+        attn = torch.softmax(attn_logits, dim=-1)
+        attn = torch.where(padding_mask, torch.zeros_like(attn), attn)
+        attn = attn / attn.sum(dim=-1, keepdim=True).clamp_min(1e-8)
+        pooled = (x * attn.unsqueeze(-1)).sum(dim=1)
+        last_hidden = self._last_valid_hidden(x, padding_mask)
+        denom = (~padding_mask).sum(dim=1, keepdim=True).clamp(min=1)
+        mean_hidden = (x * (~padding_mask).unsqueeze(-1)).sum(dim=1) / denom
+        fused = torch.cat([pooled, last_hidden, mean_hidden, self.user_embed(user_ids)], dim=-1)
+        seq_embed = self.proj(fused)
+        return x, self.output_norm(seq_embed)
+
+    def _item_logits(self, reps: torch.Tensor) -> torch.Tensor:
+        return F.linear(reps, self.embed.weight, self.output_bias)
 
     def encode(
         self,
@@ -203,17 +298,30 @@ class RealWorldTemporalEncoder(nn.Module):
         context_hours: torch.Tensor,
         user_ids: torch.Tensor,
     ) -> torch.Tensor:
-        item_emb = self.embed(context_items)
-        hour_emb = self.hour_embed(context_hours)
-        delta_emb = self.time2vec(context_deltas.unsqueeze(-1))
-        user_emb = self.user_embed(user_ids).unsqueeze(1)
-        x = item_emb + hour_emb + delta_emb + user_emb + self.pos_embed[:, : context_items.shape[1], :]
-        x = self.transformer(x)
-        x, _ = self.gru(x)
-        attn = torch.softmax(self.attn(x).squeeze(-1), dim=-1)
-        pooled = (x * attn.unsqueeze(-1)).sum(dim=1)
-        fused = torch.cat([pooled, self.user_embed(user_ids)], dim=-1)
-        return self.proj(fused)
+        _seq, pooled = self._sequence_forward(context_items, context_deltas, context_hours, user_ids)
+        return pooled
+
+    def project_contrastive(
+        self,
+        context_items: torch.Tensor,
+        context_deltas: torch.Tensor,
+        context_hours: torch.Tensor,
+        user_ids: torch.Tensor,
+        mask_positions: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        z = self.encode_with_masks(context_items, context_deltas, context_hours, user_ids, mask_positions)
+        return F.normalize(self.contrast_proj(z), dim=-1)
+
+    def encode_with_masks(
+        self,
+        context_items: torch.Tensor,
+        context_deltas: torch.Tensor,
+        context_hours: torch.Tensor,
+        user_ids: torch.Tensor,
+        mask_positions: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        _seq, pooled = self._sequence_forward(context_items, context_deltas, context_hours, user_ids, mask_positions)
+        return pooled
 
     def forward(
         self,
@@ -223,7 +331,19 @@ class RealWorldTemporalEncoder(nn.Module):
         user_ids: torch.Tensor,
     ) -> torch.Tensor:
         z = self.encode(context_items, context_deltas, context_hours, user_ids)
-        return self.out(z)
+        return self._item_logits(z)
+
+    def masked_item_logits(
+        self,
+        context_items: torch.Tensor,
+        context_deltas: torch.Tensor,
+        context_hours: torch.Tensor,
+        user_ids: torch.Tensor,
+        mask_positions: torch.Tensor,
+    ) -> torch.Tensor:
+        seq, _pooled = self._sequence_forward(context_items, context_deltas, context_hours, user_ids, mask_positions)
+        token_embed = self.token_proj(seq)
+        return self._item_logits(token_embed)
 
     @torch.no_grad()
     def predict_scores(
@@ -246,6 +366,10 @@ class FederatedConfig:
     lr: float = 1e-3
     weight_decay: float = 1e-5
     elastic_tau: float = 2.0
+    mask_prob: float = 0.20
+    mlm_weight: float = 0.35
+    contrastive_weight: float = 0.10
+    contrastive_temperature: float = 0.20
     seed: int = 42
     device: str = "cpu"
 
@@ -255,6 +379,91 @@ class FederatedTrainResult:
     model: RealWorldTemporalEncoder
     round_losses: list[float]
     val_losses: list[float]
+
+
+def load_compatible_temporal_state(
+    model: RealWorldTemporalEncoder,
+    state: dict[str, torch.Tensor],
+    logger: logging.Logger | None = None,
+    source: str | None = None,
+) -> None:
+    current = model.state_dict()
+    matched: dict[str, torch.Tensor] = {}
+    skipped: list[str] = []
+    for key, value in state.items():
+        if key not in current or current[key].shape != value.shape:
+            skipped.append(key)
+            continue
+        matched[key] = value
+    current.update(matched)
+    model.load_state_dict(current)
+    if logger is not None:
+        origin = source or "temporal checkpoint"
+        logger.info(
+            "Loaded compatible %s | matched=%d skipped=%d",
+            origin,
+            len(matched),
+            len(skipped),
+        )
+        if skipped:
+            logger.info("Skipped temporal keys: %s", ", ".join(skipped[:8]) + (" ..." if len(skipped) > 8 else ""))
+
+
+def _sample_mask_positions(items: torch.Tensor, mask_prob: float) -> torch.Tensor:
+    if mask_prob <= 0.0:
+        return torch.zeros_like(items, dtype=torch.bool)
+    valid = items > 0
+    mask = (torch.rand_like(items, dtype=torch.float32) < mask_prob) & valid
+    missing = (~mask.any(dim=1)) & valid.any(dim=1)
+    if missing.any():
+        valid_counts = valid.sum(dim=1)
+        last_valid = (valid_counts - 1).clamp(min=0)
+        mask[missing, last_valid[missing]] = True
+    return mask
+
+
+def _masked_item_loss(
+    model: RealWorldTemporalEncoder,
+    items: torch.Tensor,
+    deltas: torch.Tensor,
+    hours: torch.Tensor,
+    users: torch.Tensor,
+    mask_prob: float,
+) -> torch.Tensor:
+    mask_positions = _sample_mask_positions(items, mask_prob)
+    if not mask_positions.any():
+        return items.new_zeros((), dtype=torch.float32)
+    logits = model.masked_item_logits(items, deltas, hours, users, mask_positions)
+    return F.cross_entropy(logits[mask_positions], items[mask_positions])
+
+
+def _contrastive_loss(
+    model: RealWorldTemporalEncoder,
+    items: torch.Tensor,
+    deltas: torch.Tensor,
+    hours: torch.Tensor,
+    users: torch.Tensor,
+    mask_prob: float,
+    temperature: float,
+) -> torch.Tensor:
+    if items.shape[0] < 2:
+        return items.new_zeros((), dtype=torch.float32)
+    view1 = _sample_mask_positions(items, max(0.05, mask_prob * 0.75))
+    view2 = _sample_mask_positions(items, max(0.05, mask_prob * 0.75))
+    z1 = model.project_contrastive(items, deltas, hours, users, view1)
+    z2 = model.project_contrastive(items, deltas, hours, users, view2)
+    reps = torch.cat([z1, z2], dim=0)
+    logits = torch.matmul(reps, reps.t()) / max(temperature, 1e-6)
+    logits.fill_diagonal_(-1e9)
+    batch = z1.shape[0]
+    targets = torch.cat(
+        [
+            torch.arange(batch, 2 * batch, device=items.device),
+            torch.arange(0, batch, device=items.device),
+        ],
+        dim=0,
+    )
+    return F.cross_entropy(logits, targets)
 
 
 def _train_one_local_model(
@@ -281,7 +490,18 @@ def _train_one_local_model(
             users = users.to(device)
             targets = targets.to(device)
             logits = model(items, deltas, hours, users)
-            loss = loss_fn(logits, targets)
+            next_loss = loss_fn(logits, targets)
+            mlm_loss = _masked_item_loss(model, items, deltas, hours, users, cfg.mask_prob)
+            cont_loss = _contrastive_loss(
+                model,
+                items,
+                deltas,
+                hours,
+                users,
+                cfg.mask_prob,
+                cfg.contrastive_temperature,
+            )
+            loss = next_loss + cfg.mlm_weight * mlm_loss + cfg.contrastive_weight * cont_loss
             opt.zero_grad()
             loss.backward()
             opt.step()

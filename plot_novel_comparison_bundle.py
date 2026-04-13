@@ -13,10 +13,20 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from compare_related_work_papers import (
+    AttentionWeightedFDRLPolicy,
+    MobilityAwareAsyncFDRLPolicy,
+    _adapt_candidate_features,
+    _adapt_node_features,
+)
 from movie_edge_sim.data import get_movielens_dataset, load_item_genres_auto, load_ratings_auto
-from movie_edge_sim.novel_graph_policy import TemporalGraphCooperativePolicy, _obs_to_tensors, logits_to_cache_items
+from movie_edge_sim.novel_graph_policy import TemporalGraphCooperativePolicy, logits_to_cache_items
 from movie_edge_sim.novel_realworld_env import NovelRealWorldCachingEnv, RealWorldEnvConfig
-from movie_edge_sim.temporal_realworld import RealWorldTemporalEncoder, build_user_time_histories
+from movie_edge_sim.temporal_realworld import (
+    RealWorldTemporalEncoder,
+    build_user_time_histories,
+    load_compatible_temporal_state,
+)
 from train_novel_realworld_cache import eval_bsg, eval_c_epsilon_greedy, eval_random
 
 
@@ -91,7 +101,11 @@ def load_histories_and_temporal(cfg: BundleConfig):
         hidden_dim=128,
         num_heads=4,
     )
-    temporal.load_state_dict(torch.load(cfg.run_dir / "realworld_temporal_encoder.pt", map_location=cfg.device, weights_only=True))
+    load_compatible_temporal_state(
+        temporal,
+        torch.load(cfg.run_dir / "realworld_temporal_encoder.pt", map_location=cfg.device, weights_only=True),
+        source=str(cfg.run_dir / "realworld_temporal_encoder.pt"),
+    )
     temporal.eval()
     return histories, temporal, item_genres
 
@@ -113,17 +127,21 @@ def build_env_and_model(cfg: BundleConfig, histories, temporal_model, item_genre
         seed=cfg.seed,
     )
     env = NovelRealWorldCachingEnv(env_cfg, temporal_model, histories, item_genres=item_genres)
-    obs = env.reset(seed=cfg.seed)
-    hidden_dim = infer_hidden_dim(cfg.run_dir)
+    policy_state = torch.load(cfg.run_dir / "temporal_graph_policy.pt", map_location=cfg.device, weights_only=True)
+    hidden_dim = int(policy_state["gat1.proj.weight"].shape[0])
+    expected_node_dim = int(policy_state["gat1.proj.weight"].shape[1])
+    expected_candidate_dim = int(policy_state["candidate_encoder.0.weight"].shape[1])
     model = TemporalGraphCooperativePolicy(
-        node_feat_dim=int(obs["node_features"].shape[1]),
-        candidate_feat_dim=int(obs["candidate_features"].shape[2]),
+        node_feat_dim=expected_node_dim,
+        candidate_feat_dim=expected_candidate_dim,
         hidden_dim=hidden_dim,
         fp=cfg.fp,
         use_graph=True,
     ).to(cfg.device)
-    model.load_state_dict(torch.load(cfg.run_dir / "temporal_graph_policy.pt", map_location=cfg.device, weights_only=True))
+    model.load_state_dict(policy_state, strict=False)
     model.eval()
+    model.expected_node_dim = expected_node_dim
+    model.expected_candidate_dim = expected_candidate_dim
     return env, model
 
 
@@ -139,6 +157,7 @@ def summarize_rows(rows: list[dict[str, float]]) -> dict[str, float]:
 
 def evaluate_temporal_graph(env: NovelRealWorldCachingEnv, model: TemporalGraphCooperativePolicy, episodes: int, seed: int, device: str, diversity_penalty: float) -> list[dict[str, float]]:
     rows: list[dict[str, float]] = []
+    dev = torch.device(device)
     for ep in range(episodes):
         obs = env.reset(seed=seed + ep)
         done = False
@@ -148,8 +167,13 @@ def evaluate_temporal_graph(env: NovelRealWorldCachingEnv, model: TemporalGraphC
         cloud_sum = 0.0
         steps = 0
         while not done:
-            node, cand, adj, mask = _obs_to_tensors(obs, torch.device(device))
-            logits = model(node, cand, adj, mask)
+            node = _adapt_node_features(obs["node_features"], model.expected_node_dim, env.embed_dim)
+            cand = _adapt_candidate_features(obs["candidate_features"], model.expected_candidate_dim, env.embed_dim)
+            node_t = torch.as_tensor(node, dtype=torch.float32, device=dev)
+            cand_t = torch.as_tensor(cand, dtype=torch.float32, device=dev)
+            adj_t = torch.as_tensor(obs["adjacency"], dtype=torch.float32, device=dev)
+            mask_t = torch.as_tensor(obs["action_mask"], dtype=torch.float32, device=dev)
+            logits = model(node_t, cand_t, adj_t, mask_t)
             chosen = logits_to_cache_items(logits, env, diversity_penalty=diversity_penalty)
             obs, reward, done, info = env.step_full_cache_items(chosen)
             reward_sum += float(reward)
@@ -226,6 +250,65 @@ def eval_action_policy(env: NovelRealWorldCachingEnv, action_fn, episodes: int, 
     return rows, {k: v / denom for k, v in cost_acc.items()}, trace
 
 
+def eval_policy_object(
+    env: NovelRealWorldCachingEnv,
+    policy,
+    episodes: int,
+    seed: int,
+) -> tuple[list[dict[str, float]], dict[str, float], list[dict[str, float]]]:
+    rows = []
+    cost_acc = {"local": 0.0, "neighbor": 0.0, "cloud": 0.0, "replace": 0.0}
+    trace: list[dict[str, float]] = []
+    for ep in range(episodes):
+        obs = env.reset(seed=seed + ep)
+        policy.reset(env)
+        done = False
+        reward_sum = local_sum = neighbor_sum = cloud_sum = 0.0
+        steps = 0
+        prev_cache = env.cache_items.copy()
+        while not done:
+            action = policy.select_items(obs, env)
+            replaced = float(np.sum(~np.isin(action, prev_cache)))
+            prev_cache = action.copy()
+            next_obs, reward, done, info = env.step_full_cache_items(action)
+            policy.update(env, obs, action, info)
+            reward_sum += float(reward)
+            local_sum += float(info["local_hit_rate"])
+            neighbor_sum += float(info["neighbor_fetch_rate"])
+            cloud_sum += float(info["cloud_fetch_rate"])
+            cost_acc["local"] += env.cfg.alpha_local * float(info["local_hit_rate"])
+            cost_acc["neighbor"] += env.cfg.beta_neighbor * float(info["neighbor_fetch_rate"])
+            cost_acc["cloud"] += env.cfg.chi_cloud * float(info["cloud_fetch_rate"])
+            cost_acc["replace"] += env.cfg.delta_replace * (replaced / max(1.0, env.cfg.n_sbs * env.cfg.cache_capacity))
+            trace.append(
+                {
+                    "episode": float(ep + 1),
+                    "step": float(steps),
+                    "reward": float(reward),
+                    "local_hit_rate": float(info["local_hit_rate"]),
+                    "neighbor_fetch_rate": float(info["neighbor_fetch_rate"]),
+                    "cloud_fetch_rate": float(info["cloud_fetch_rate"]),
+                    "paper_hit_rate": float(info["local_hit_rate"] + info["neighbor_fetch_rate"]),
+                    "cache_overlap": float(mean_neighbor_overlap(env)),
+                    "cache_diversity": float(1.0 - mean_neighbor_overlap(env)),
+                }
+            )
+            steps += 1
+            obs = next_obs
+        rows.append(
+            {
+                "episode": ep + 1,
+                "reward": reward_sum,
+                "local_hit_rate": local_sum / max(1, steps),
+                "neighbor_fetch_rate": neighbor_sum / max(1, steps),
+                "cloud_fetch_rate": cloud_sum / max(1, steps),
+                "paper_hit_rate": (local_sum + neighbor_sum) / max(1, steps),
+            }
+        )
+    denom = float(max(1, episodes * env.cfg.episode_len))
+    return rows, {k: v / denom for k, v in cost_acc.items()}, trace
+
+
 def mean_neighbor_overlap(env: NovelRealWorldCachingEnv) -> float:
     overlaps = []
     for b in range(env.cfg.n_sbs):
@@ -287,16 +370,30 @@ class CEpsPolicy:
 
 
 def temporal_graph_action_fn(model, device: str, diversity_penalty: float):
+    dev = torch.device(device)
+
     def _fn(env: NovelRealWorldCachingEnv, obs):
-        node, cand, adj, mask = _obs_to_tensors(obs, torch.device(device))
-        logits = model(node, cand, adj, mask)
+        node = _adapt_node_features(obs["node_features"], model.expected_node_dim, env.embed_dim)
+        cand = _adapt_candidate_features(obs["candidate_features"], model.expected_candidate_dim, env.embed_dim)
+        node_t = torch.as_tensor(node, dtype=torch.float32, device=dev)
+        cand_t = torch.as_tensor(cand, dtype=torch.float32, device=dev)
+        adj_t = torch.as_tensor(obs["adjacency"], dtype=torch.float32, device=dev)
+        mask_t = torch.as_tensor(obs["action_mask"], dtype=torch.float32, device=dev)
+        logits = model(node_t, cand_t, adj_t, mask_t)
         return logits_to_cache_items(logits, env, diversity_penalty=diversity_penalty)
 
     return _fn
 
 
 def plot_lines(x, series: dict[str, list[float]], title: str, ylabel: str, out_path: Path) -> None:
-    colors = {"Random": "#6c757d", "BSG-like": "#8d99ae", "C-epsilon-greedy": "#457b9d", "TemporalGraph": "#d62828"}
+    colors = {
+        "Random": "#6c757d",
+        "BSG-like": "#8d99ae",
+        "C-epsilon-greedy": "#457b9d",
+        "AWFDRL": "#1d3557",
+        "MAAFDRL": "#2a9d8f",
+        "TemporalGraph": "#d62828",
+    }
     fig, ax = plt.subplots(figsize=(8.8, 4.8))
     for name, vals in series.items():
         ax.plot(x, vals, marker="o", linewidth=2.0, label=name, color=colors[name])
@@ -404,6 +501,54 @@ def burst_trace(env: NovelRealWorldCachingEnv, action_fn, episodes: int, seed: i
     return all_rows
 
 
+def burst_trace_policy(env: NovelRealWorldCachingEnv, policy, episodes: int, seed: int, burst_window: tuple[int, int]) -> list[dict[str, float]]:
+    all_rows = []
+    for ep in range(episodes):
+        obs = env.reset(seed=seed + ep)
+        policy.reset(env)
+        patch_burst_sampling(env, burst_window[0], burst_window[1])
+        done = False
+        step = 0
+        while not done:
+            action = policy.select_items(obs, env)
+            burst_items = env.current_trend_items.copy()
+            next_obs, reward, done, info = env.step_full_cache_items(action)
+            policy.update(env, obs, action, info)
+            association = obs["association"].copy()
+            burst_local = 0.0
+            burst_total = 0.0
+            burst_edge = 0.0
+            for ue in range(env.cfg.n_ues):
+                if not env.last_active_mask[ue]:
+                    continue
+                b = int(association[ue])
+                item = int(env.last_requests[ue])
+                if item != int(burst_items[b]) or item <= 0:
+                    continue
+                burst_total += 1.0
+                if item in env.cache_items[b]:
+                    burst_local += 1.0
+                    burst_edge += 1.0
+                else:
+                    neigh = np.where(env.current_adjacency[b] > 0.0)[0]
+                    neigh = neigh[neigh != b]
+                    if any(item in env.cache_items[int(n)] for n in neigh):
+                        burst_edge += 1.0
+            all_rows.append(
+                {
+                    "episode": float(ep + 1),
+                    "step": float(step),
+                    "burst_local_hit": 0.0 if burst_total <= 0 else burst_local / burst_total,
+                    "burst_edge_hit": 0.0 if burst_total <= 0 else burst_edge / burst_total,
+                }
+            )
+            step += 1
+            obs = next_obs
+        if hasattr(env, "_original_sample_requests"):
+            env._sample_requests = env._original_sample_requests
+    return all_rows
+
+
 def main() -> None:
     cfg = parse_args()
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
@@ -418,7 +563,16 @@ def main() -> None:
         bsg_rows = eval_bsg(env, cfg.eval_episodes, seed=cfg.seed + 200)
         ceps_rows = eval_c_epsilon_greedy(env, cfg.eval_episodes, seed=cfg.seed + 300)
         tg_rows = evaluate_temporal_graph(env, model, cfg.eval_episodes, seed=cfg.seed + 400, device=cfg.device, diversity_penalty=cfg.decode_diversity_penalty)
-        for name, rows in [("Random", random_rows), ("BSG-like", bsg_rows), ("C-epsilon-greedy", ceps_rows), ("TemporalGraph", tg_rows)]:
+        awf_rows, _, _ = eval_policy_object(env, AttentionWeightedFDRLPolicy(), cfg.eval_episodes, seed=cfg.seed + 450)
+        maaf_rows, _, _ = eval_policy_object(env, MobilityAwareAsyncFDRLPolicy(), cfg.eval_episodes, seed=cfg.seed + 475)
+        for name, rows in [
+            ("Random", random_rows),
+            ("BSG-like", bsg_rows),
+            ("C-epsilon-greedy", ceps_rows),
+            ("AWFDRL", awf_rows),
+            ("MAAFDRL", maaf_rows),
+            ("TemporalGraph", tg_rows),
+        ]:
             summary = summarize_rows(rows)
             capacity_rows.append({"cache_capacity": float(cap), "model": name, **summary})
 
@@ -430,7 +584,16 @@ def main() -> None:
         bsg_rows = eval_bsg(env, cfg.eval_episodes, seed=cfg.seed + 600)
         ceps_rows = eval_c_epsilon_greedy(env, cfg.eval_episodes, seed=cfg.seed + 700)
         tg_rows = evaluate_temporal_graph(env, model, cfg.eval_episodes, seed=cfg.seed + 800, device=cfg.device, diversity_penalty=cfg.decode_diversity_penalty)
-        for name, rows in [("Random", random_rows), ("BSG-like", bsg_rows), ("C-epsilon-greedy", ceps_rows), ("TemporalGraph", tg_rows)]:
+        awf_rows, _, _ = eval_policy_object(env, AttentionWeightedFDRLPolicy(), cfg.eval_episodes, seed=cfg.seed + 850)
+        maaf_rows, _, _ = eval_policy_object(env, MobilityAwareAsyncFDRLPolicy(), cfg.eval_episodes, seed=cfg.seed + 875)
+        for name, rows in [
+            ("Random", random_rows),
+            ("BSG-like", bsg_rows),
+            ("C-epsilon-greedy", ceps_rows),
+            ("AWFDRL", awf_rows),
+            ("MAAFDRL", maaf_rows),
+            ("TemporalGraph", tg_rows),
+        ]:
             summary = summarize_rows(rows)
             sbs_rows.append({"n_sbs": float(n_sbs), "model": name, **summary})
 
@@ -441,6 +604,8 @@ def main() -> None:
     _, bsg_costs, bsg_trace = eval_action_policy(env, bsg_action, cfg.eval_episodes, seed=cfg.seed + 1000)
     _, ceps_costs, ceps_trace = eval_action_policy(env, ceps_policy.action, cfg.eval_episodes, seed=cfg.seed + 1100)
     _, tg_costs, tg_trace = eval_action_policy(env, temporal_graph_action_fn(model, cfg.device, cfg.decode_diversity_penalty), cfg.eval_episodes, seed=cfg.seed + 1200)
+    _, awf_costs, awf_trace = eval_policy_object(env, AttentionWeightedFDRLPolicy(), cfg.eval_episodes, seed=cfg.seed + 1250)
+    _, maaf_costs, maaf_trace = eval_policy_object(env, MobilityAwareAsyncFDRLPolicy(), cfg.eval_episodes, seed=cfg.seed + 1275)
 
     print("Collecting burst-adaptation traces...", flush=True)
     burst_window = (cfg.episode_len // 3, 2 * cfg.episode_len // 3)
@@ -450,19 +615,35 @@ def main() -> None:
     ceps_burst_policy = CEpsPolicy()
     burst_ceps = burst_trace(burst_env, ceps_burst_policy.action, 1, cfg.seed + 1500, burst_window, ceps_policy=ceps_burst_policy)
     burst_tg = burst_trace(burst_env, temporal_graph_action_fn(burst_model, cfg.device, cfg.decode_diversity_penalty), 1, cfg.seed + 1600, burst_window)
+    burst_awf = burst_trace_policy(burst_env, AttentionWeightedFDRLPolicy(), 1, cfg.seed + 1650, burst_window)
+    burst_maaf = burst_trace_policy(burst_env, MobilityAwareAsyncFDRLPolicy(), 1, cfg.seed + 1675, burst_window)
+
+    cost_rows = [
+        {"model": "Random", **random_costs},
+        {"model": "BSG-like", **bsg_costs},
+        {"model": "C-epsilon-greedy", **ceps_costs},
+        {"model": "AWFDRL", **awf_costs},
+        {"model": "MAAFDRL", **maaf_costs},
+        {"model": "TemporalGraph", **tg_costs},
+    ]
 
     print("Saving CSVs and plots...", flush=True)
     # Save CSVs.
     for path, rows in [
         (cfg.output_dir / "capacity_sweep.csv", capacity_rows),
         (cfg.output_dir / "sbs_sweep.csv", sbs_rows),
+        (cfg.output_dir / "cost_summary.csv", cost_rows),
         (cfg.output_dir / "random_trace.csv", random_trace),
         (cfg.output_dir / "bsg_trace.csv", bsg_trace),
         (cfg.output_dir / "c_epsilon_trace.csv", ceps_trace),
+        (cfg.output_dir / "awfdrl_trace.csv", awf_trace),
+        (cfg.output_dir / "maafdrl_trace.csv", maaf_trace),
         (cfg.output_dir / "temporal_graph_trace.csv", tg_trace),
         (cfg.output_dir / "burst_random.csv", burst_random),
         (cfg.output_dir / "burst_bsg.csv", burst_bsg),
         (cfg.output_dir / "burst_c_epsilon.csv", burst_ceps),
+        (cfg.output_dir / "burst_awfdrl.csv", burst_awf),
+        (cfg.output_dir / "burst_maafdrl.csv", burst_maaf),
         (cfg.output_dir / "burst_temporal_graph.csv", burst_tg),
     ]:
         if rows:
@@ -478,7 +659,7 @@ def main() -> None:
     ]:
         series = {}
         x = cfg.cache_capacities
-        for model_name in ["Random", "BSG-like", "C-epsilon-greedy", "TemporalGraph"]:
+        for model_name in ["Random", "BSG-like", "C-epsilon-greedy", "AWFDRL", "MAAFDRL", "TemporalGraph"]:
             series[model_name] = [next(r[metric] for r in capacity_rows if r["model"] == model_name and int(r["cache_capacity"]) == cap) for cap in x]
         plot_lines(x, series, filename.replace(".png", "").replace("_", " ").title(), ylabel, cfg.output_dir / filename)
 
@@ -489,7 +670,7 @@ def main() -> None:
     ]:
         series = {}
         x = cfg.sbs_list
-        for model_name in ["Random", "BSG-like", "C-epsilon-greedy", "TemporalGraph"]:
+        for model_name in ["Random", "BSG-like", "C-epsilon-greedy", "AWFDRL", "MAAFDRL", "TemporalGraph"]:
             series[model_name] = [next(r[metric] for r in sbs_rows if r["model"] == model_name and int(r["n_sbs"]) == n_sbs) for n_sbs in x]
         plot_lines(x, series, filename.replace(".png", "").replace("_", " ").title(), ylabel, cfg.output_dir / filename)
 
@@ -499,6 +680,8 @@ def main() -> None:
             "Random": random_costs,
             "BSG-like": bsg_costs,
             "C-epsilon-greedy": ceps_costs,
+            "AWFDRL": awf_costs,
+            "MAAFDRL": maaf_costs,
             "TemporalGraph": tg_costs,
         },
         cfg.output_dir / "cost_breakdown.png",
@@ -510,6 +693,8 @@ def main() -> None:
         ("Random", burst_random, "#6c757d"),
         ("BSG-like", burst_bsg, "#8d99ae"),
         ("C-epsilon-greedy", burst_ceps, "#457b9d"),
+        ("AWFDRL", burst_awf, "#1d3557"),
+        ("MAAFDRL", burst_maaf, "#2a9d8f"),
         ("TemporalGraph", burst_tg, "#d62828"),
     ]:
         steps = [int(r["step"]) for r in rows]
@@ -535,6 +720,8 @@ def main() -> None:
         ("Random", random_trace, "#6c757d"),
         ("BSG-like", bsg_trace, "#8d99ae"),
         ("C-epsilon-greedy", ceps_trace, "#457b9d"),
+        ("AWFDRL", awf_trace, "#1d3557"),
+        ("MAAFDRL", maaf_trace, "#2a9d8f"),
         ("TemporalGraph", tg_trace, "#d62828"),
     ]:
         steps = np.arange(len(rows))

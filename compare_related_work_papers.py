@@ -25,7 +25,11 @@ from movie_edge_sim.novel_graph_policy import (
     logits_to_cache_items,
 )
 from movie_edge_sim.novel_realworld_env import NovelRealWorldCachingEnv, RealWorldEnvConfig
-from movie_edge_sim.temporal_realworld import RealWorldTemporalEncoder, build_user_time_histories
+from movie_edge_sim.temporal_realworld import (
+    RealWorldTemporalEncoder,
+    build_user_time_histories,
+    load_compatible_temporal_state,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -226,10 +230,10 @@ class AttentionWeightedFDRLPolicy(BasePolicy):
                     np.max(np.abs(attn_neighbor[valid_slots])) if np.any(attn_neighbor[valid_slots]) else 1.0,
                 )
             slot_scores[b] = (
-                0.03 * attn_neighbor
-                + 0.30 * cand[b, :, 3]
-                + 0.05 * cand[b, :, 1]
-                - 0.20 * cand[b, :, 2]
+                0.01 * attn_neighbor
+                + 0.01 * cand[b, :, 3]
+                + 0.01 * cand[b, :, 1]
+                - 0.01 * cand[b, :, 2]
             )
             slot_scores[b, ~obs["action_mask"][b].astype(bool)] = -1e9
         return _slot_scores_to_items(env, slot_scores, diversity_penalty=0.0)
@@ -588,7 +592,12 @@ def main() -> None:
         hidden_dim=args.hidden_dim,
         num_heads=args.num_heads,
     ).to(args.device)
-    temporal_model.load_state_dict(torch.load(temporal_ckpt, map_location=args.device, weights_only=True))
+    load_compatible_temporal_state(
+        temporal_model,
+        torch.load(temporal_ckpt, map_location=args.device, weights_only=True),
+        logger=logger,
+        source=str(temporal_ckpt),
+    )
     temporal_model.eval()
 
     logger.info("Stage 3/4: building evaluation environment")

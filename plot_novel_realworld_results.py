@@ -11,10 +11,41 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
+DISPLAY_NAMES = {
+    "Random": "Random",
+    "BSG-like": "BSG-like",
+    "C-epsilon-greedy": "C-epsilon-greedy",
+    "Teacher": "Teacher",
+    "TemporalGraph": "TemporalGraph",
+    "AWFDRL": "AWFDRL",
+    "MAAFDRL": "MAAFDRL",
+    "DTS-DDPG": "DTS-DDPG",
+}
+
+COLORS = {
+    "Random": "#8d99ae",
+    "BSG-like": "#577590",
+    "C-epsilon-greedy": "#90be6d",
+    "Teacher": "#f8961e",
+    "TemporalGraph": "#d62828",
+    "AWFDRL": "#1d3557",
+    "MAAFDRL": "#2a9d8f",
+    "DTS-DDPG": "#7b2cbf",
+}
+
+RELATED_NAME_MAP = {
+    "Our-TemporalGraph": "TemporalGraph",
+    "Paper2-AWFDRL-like": "AWFDRL",
+    "Paper3-MAAFDRL-like": "MAAFDRL",
+    "Paper4-DTS-DDPG-like": "DTS-DDPG",
+}
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Plot results for the novel real-world cooperative caching pipeline.")
     p.add_argument("--input-dir", type=Path, required=True)
     p.add_argument("--output-dir", type=Path, default=None)
+    p.add_argument("--related-work-dir", type=Path, default=None)
     return p.parse_args()
 
 
@@ -32,6 +63,57 @@ def available_eval_specs(input_dir: Path) -> list[tuple[str, str, str]]:
         ("temporal_graph_eval.csv", "TemporalGraph", "#d62828"),
     ]
     return [spec for spec in specs if (input_dir / spec[0]).exists()]
+
+
+def detect_related_work_dir(input_dir: Path, related_work_dir: Path | None) -> Path | None:
+    if related_work_dir is not None:
+        return related_work_dir
+    candidate = input_dir.parent / "related_work_compare"
+    return candidate if candidate.exists() else None
+
+
+def load_related_summary(related_work_dir: Path | None) -> list[dict[str, float | str]]:
+    if related_work_dir is None:
+        return []
+    path = related_work_dir / "summary.csv"
+    if not path.exists():
+        return []
+    rows: list[dict[str, float | str]] = []
+    for row in read_csv(path):
+        name = RELATED_NAME_MAP.get(row["scheme"])
+        if name is None:
+            continue
+        rows.append(
+            {
+                "label": name,
+                "reward": float(row["reward_mean"]),
+                "local": float(row["local_hit_mean"]),
+                "paper": float(row["paper_hit_mean"]),
+                "cloud": float(row["cloud_fetch_mean"]),
+            }
+        )
+    return rows
+
+
+def load_related_episode_curves(related_work_dir: Path | None) -> list[tuple[list[dict[str, str]], str, str]]:
+    if related_work_dir is None:
+        return []
+    path = related_work_dir / "episode_metrics.csv"
+    if not path.exists():
+        return []
+    grouped: dict[str, list[dict[str, str]]] = {}
+    for row in read_csv(path):
+        name = RELATED_NAME_MAP.get(row["scheme"])
+        if name is None:
+            continue
+        grouped.setdefault(name, []).append(
+            {
+                "episode": row["episode"],
+                "reward": row["reward"],
+                "paper_hit_rate": row["paper_hit_rate"],
+            }
+        )
+    return [(rows, name, COLORS[name]) for name, rows in grouped.items() if name != "TemporalGraph"]
 
 
 def maybe_plot_temporal_training(input_dir: Path, output_dir: Path) -> None:
@@ -90,11 +172,11 @@ def maybe_plot_policy_imitation(input_dir: Path, output_dir: Path) -> None:
     plt.close(fig)
 
 
-def plot_eval_bars(input_dir: Path, output_dir: Path, include_teacher: bool = True) -> None:
+def plot_eval_bars(input_dir: Path, output_dir: Path, related_work_dir: Path | None, include_teacher: bool = True) -> None:
     eval_files = [(filename, label) for filename, label, _ in available_eval_specs(input_dir)]
     if not include_teacher:
         eval_files = [(filename, label) for filename, label in eval_files if label != "Teacher"]
-    summary = []
+    summary: list[dict[str, float | str]] = []
     for filename, label in eval_files:
         path = input_dir / filename
         if not path.exists():
@@ -109,15 +191,23 @@ def plot_eval_bars(input_dir: Path, output_dir: Path, include_teacher: bool = Tr
                 "cloud": float(np.mean([float(r["cloud_fetch_rate"]) for r in rows])),
             }
         )
+    seen = {str(row["label"]) for row in summary}
+    for row in load_related_summary(related_work_dir):
+        label = str(row["label"])
+        if label in seen or (not include_teacher and label == "Teacher"):
+            continue
+        summary.append(row)
+        seen.add(label)
 
     if not summary:
         return
 
     labels = [x["label"] for x in summary]
     x = np.arange(len(labels))
+    bar_colors = [COLORS[str(label)] for label in labels]
 
     fig, axes = plt.subplots(1, 3, figsize=(14, 4.5))
-    axes[0].bar(x, [s["reward"] for s in summary], color=["#8d99ae", "#577590", "#90be6d", "#f8961e", "#d62828"][: len(summary)])
+    axes[0].bar(x, [s["reward"] for s in summary], color=bar_colors)
     axes[0].set_xticks(x, labels, rotation=20, ha="right")
     axes[0].set_title("Reward Comparison")
     axes[0].grid(axis="y", alpha=0.25)
@@ -141,7 +231,7 @@ def plot_eval_bars(input_dir: Path, output_dir: Path, include_teacher: bool = Tr
     plt.close(fig)
 
 
-def plot_eval_episode_curves(input_dir: Path, output_dir: Path, include_teacher: bool = True) -> None:
+def plot_eval_episode_curves(input_dir: Path, output_dir: Path, related_work_dir: Path | None, include_teacher: bool = True) -> None:
     eval_files = available_eval_specs(input_dir)
     if not include_teacher:
         eval_files = [spec for spec in eval_files if spec[1] != "Teacher"]
@@ -150,6 +240,7 @@ def plot_eval_episode_curves(input_dir: Path, output_dir: Path, include_teacher:
         path = input_dir / filename
         if path.exists():
             available.append((read_csv(path), label, color))
+    available.extend(load_related_episode_curves(related_work_dir))
     if not available:
         return
 
@@ -180,12 +271,13 @@ def main() -> None:
     args = parse_args()
     output_dir = args.output_dir or args.input_dir
     output_dir.mkdir(parents=True, exist_ok=True)
+    related_work_dir = detect_related_work_dir(args.input_dir, args.related_work_dir)
     maybe_plot_temporal_training(args.input_dir, output_dir)
     maybe_plot_policy_imitation(args.input_dir, output_dir)
-    plot_eval_bars(args.input_dir, output_dir, include_teacher=True)
-    plot_eval_bars(args.input_dir, output_dir, include_teacher=False)
-    plot_eval_episode_curves(args.input_dir, output_dir, include_teacher=True)
-    plot_eval_episode_curves(args.input_dir, output_dir, include_teacher=False)
+    plot_eval_bars(args.input_dir, output_dir, related_work_dir, include_teacher=True)
+    plot_eval_bars(args.input_dir, output_dir, related_work_dir, include_teacher=False)
+    plot_eval_episode_curves(args.input_dir, output_dir, related_work_dir, include_teacher=True)
+    plot_eval_episode_curves(args.input_dir, output_dir, related_work_dir, include_teacher=False)
     print(f"Saved plots under: {output_dir}")
 
 

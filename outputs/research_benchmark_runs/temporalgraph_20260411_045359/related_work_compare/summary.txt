@@ -1,0 +1,7 @@
+Run dir: outputs/research_benchmark_runs/temporalgraph_20260411_045359/novel_realworld_main
+Dataset: ml-1m
+Evaluation episodes: 5
+TemporalGraph: reward_mean=2326.4600 local_hit_mean=0.2820 paper_hit_mean=0.4977 cloud_fetch_mean=0.5023
+AWFDRL: reward_mean=2102.4000 local_hit_mean=0.2290 paper_hit_mean=0.5346 cloud_fetch_mean=0.4654
+MAAFDRL: reward_mean=1264.2600 local_hit_mean=0.2244 paper_hit_mean=0.4134 cloud_fetch_mean=0.5866
+DTS-DDPG: reward_mean=2047.9000 local_hit_mean=0.2110 paper_hit_mean=0.5047 cloud_fetch_mean=0.4953

@@ -139,7 +139,7 @@ class CEpsilonGreedyPolicy(BasePolicy):
     name = "C-epsilon-greedy"
     action_mode = "full_cache_items"
 
-    def __init__(self, num_items: int, epsilon: float = 0.1, seed: int = 42) -> None:
+    def __init__(self, num_items: int, epsilon: float = 0.3, seed: int = 42) -> None:
         self.num_items = num_items
         self.epsilon = epsilon
         self.rng = np.random.default_rng(seed)

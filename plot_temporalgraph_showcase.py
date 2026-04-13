@@ -16,6 +16,24 @@ SUMMARY_RE = re.compile(
     r"^(?P<name>[^:]+): reward_mean=(?P<reward>[-0-9.]+) local_hit_mean=(?P<local>[-0-9.]+) paper_hit_mean=(?P<paper>[-0-9.]+)$"
 )
 
+RELATED_NAME_MAP = {
+    "Our-TemporalGraph": "TemporalGraph",
+    "Paper2-AWFDRL-like": "AWFDRL",
+    "Paper3-MAAFDRL-like": "MAAFDRL",
+    "Paper4-DTS-DDPG-like": "DTS-DDPG",
+}
+
+COLOR_MAP = {
+    "TemporalGraph": "#d62828",
+    "Teacher": "#f4a261",
+    "Random": "#6c757d",
+    "BSG-like": "#8d99ae",
+    "C-epsilon-greedy": "#457b9d",
+    "AWFDRL": "#1d3557",
+    "MAAFDRL": "#2a9d8f",
+    "DTS-DDPG": "#7b2cbf",
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate showcase plots where TemporalGraph is favorable.")
@@ -47,6 +65,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Exclude the Teacher heuristic from summary comparison plots.",
     )
+    parser.add_argument(
+        "--related-work-dir",
+        type=Path,
+        default=None,
+        help="Optional related_work_compare directory used to add AWFDRL/MAAFDRL/DTS-DDPG to showcase bars.",
+    )
     return parser.parse_args()
 
 
@@ -69,6 +93,47 @@ def load_summary(path: Path) -> list[dict[str, float | str]]:
     return rows
 
 
+def detect_related_work_dir(primary_run: Path, related_work_dir: Path | None) -> Path | None:
+    if related_work_dir is not None:
+        return related_work_dir
+    candidate = primary_run.parent / "related_work_compare"
+    return candidate if candidate.exists() else None
+
+
+def load_related_summary(path: Path | None) -> list[dict[str, float | str]]:
+    if path is None:
+        return []
+    summary_csv = path / "summary.csv"
+    if not summary_csv.exists():
+        return []
+    rows: list[dict[str, float | str]] = []
+    with summary_csv.open() as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            name = RELATED_NAME_MAP.get(row["scheme"])
+            if name is None:
+                continue
+            rows.append(
+                {
+                    "name": name,
+                    "reward_mean": float(row["reward_mean"]),
+                    "local_hit_mean": float(row["local_hit_mean"]),
+                    "paper_hit_mean": float(row["paper_hit_mean"]),
+                }
+            )
+    return rows
+
+
+def merge_summaries(primary: list[dict[str, float | str]], related: list[dict[str, float | str]]) -> list[dict[str, float | str]]:
+    merged = {str(row["name"]): row for row in primary}
+    for row in related:
+        merged.setdefault(str(row["name"]), row)
+    order = ["Random", "BSG-like", "C-epsilon-greedy", "Teacher", "AWFDRL", "MAAFDRL", "DTS-DDPG", "TemporalGraph"]
+    out = [merged[name] for name in order if name in merged]
+    out.extend(row for name, row in merged.items() if name not in order)
+    return out
+
+
 def load_csv_rows(path: Path) -> list[dict[str, float]]:
     with path.open() as f:
         reader = csv.DictReader(f)
@@ -79,15 +144,7 @@ def load_csv_rows(path: Path) -> list[dict[str, float]]:
 
 
 def _colors(names: list[str]) -> list[str]:
-    out = []
-    for name in names:
-        if name == "TemporalGraph":
-            out.append("#d62828")
-        elif name == "Teacher":
-            out.append("#f4a261")
-        else:
-            out.append("#6c757d")
-    return out
+    return [COLOR_MAP.get(name, "#6c757d") for name in names]
 
 
 def plot_metric_bars(rows: list[dict[str, float | str]], metric: str, ylabel: str, title: str, out_path: Path) -> None:
@@ -193,7 +250,10 @@ def main() -> None:
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    primary_summary = load_summary(args.primary_run / "summary.txt")
+    primary_summary = merge_summaries(
+        load_summary(args.primary_run / "summary.txt"),
+        load_related_summary(detect_related_work_dir(args.primary_run, args.related_work_dir)),
+    )
     secondary_summary = load_summary(args.secondary_run / "summary.txt")
     if args.exclude_teacher:
         primary_summary = [row for row in primary_summary if row["name"] != "Teacher"]

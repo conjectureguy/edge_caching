@@ -1,0 +1,28 @@
+2026-04-11 08:29:44,339 | INFO | related_work_compare | Stage 1/4: loading dataset ml-1m
+2026-04-11 08:29:45,680 | INFO | related_work_compare | Stage 2/4: loading trained temporal encoder from outputs/research_benchmark_runs/temporalgraph_20260411_045359/novel_realworld_main/realworld_temporal_encoder.pt
+2026-04-11 08:29:45,742 | INFO | related_work_compare | Loaded compatible outputs/research_benchmark_runs/temporalgraph_20260411_045359/novel_realworld_main/realworld_temporal_encoder.pt | matched=65 skipped=0
+2026-04-11 08:29:45,743 | INFO | related_work_compare | Stage 3/4: building evaluation environment
+/home/rahul/miniforge3/lib/python3.12/site-packages/torch/nn/modules/transformer.py:531: UserWarning: The PyTorch API of nested tensors is in prototype stage and will change in the near future. We recommend specifying layout=torch.jagged when constructing a nested tensor, as this layout receives active development, has better operator coverage, and works with torch.compile. (Triggered internally at /pytorch/aten/src/ATen/NestedTensorImpl.cpp:178.)
+  output = torch._nested_tensor_from_mask(
+2026-04-11 08:29:46,577 | INFO | related_work_compare | Environment ready | node_dim=137 candidate_dim=74
+2026-04-11 08:29:46,577 | INFO | related_work_compare | Stage 4/4: evaluating our method and paper-inspired baselines
+2026-04-11 08:29:46,582 | INFO | related_work_compare | Evaluating TemporalGraph in the same fresh harness as the paper-inspired baselines
+2026-04-11 08:30:48,383 | INFO | related_work_compare | AWFDRL episode 1/5 | reward=2010.8000 local=0.2171 neighbor=0.2824 cloud=0.5006 paper_hit=0.4994
+2026-04-11 08:30:58,737 | INFO | related_work_compare | AWFDRL episode 2/5 | reward=2207.9000 local=0.2326 neighbor=0.3015 cloud=0.4659 paper_hit=0.5341
+2026-04-11 08:31:08,983 | INFO | related_work_compare | AWFDRL episode 3/5 | reward=2075.8000 local=0.2309 neighbor=0.3154 cloud=0.4537 paper_hit=0.5463
+2026-04-11 08:31:21,832 | INFO | related_work_compare | AWFDRL episode 4/5 | reward=2209.4000 local=0.2243 neighbor=0.3452 cloud=0.4305 paper_hit=0.5695
+2026-04-11 08:31:32,605 | INFO | related_work_compare | AWFDRL episode 5/5 | reward=2008.1000 local=0.2403 neighbor=0.2836 cloud=0.4761 paper_hit=0.5239
+2026-04-11 08:31:42,130 | INFO | related_work_compare | MAAFDRL episode 1/5 | reward=1177.1000 local=0.2251 neighbor=0.1700 cloud=0.6050 paper_hit=0.3950
+2026-04-11 08:31:52,087 | INFO | related_work_compare | MAAFDRL episode 2/5 | reward=1193.4000 local=0.2174 neighbor=0.1795 cloud=0.6031 paper_hit=0.3969
+2026-04-11 08:32:02,050 | INFO | related_work_compare | MAAFDRL episode 3/5 | reward=1343.7000 local=0.2179 neighbor=0.2035 cloud=0.5787 paper_hit=0.4213
+2026-04-11 08:32:12,066 | INFO | related_work_compare | MAAFDRL episode 4/5 | reward=1347.3000 local=0.2234 neighbor=0.2017 cloud=0.5750 paper_hit=0.4250
+2026-04-11 08:32:21,985 | INFO | related_work_compare | MAAFDRL episode 5/5 | reward=1259.8000 local=0.2383 neighbor=0.1902 cloud=0.5715 paper_hit=0.4285
+2026-04-11 08:32:34,185 | INFO | related_work_compare | DTS-DDPG episode 1/5 | reward=2170.5000 local=0.2302 neighbor=0.2846 cloud=0.4852 paper_hit=0.5148
+2026-04-11 08:32:45,476 | INFO | related_work_compare | DTS-DDPG episode 2/5 | reward=2096.3000 local=0.2131 neighbor=0.2962 cloud=0.4907 paper_hit=0.5093
+2026-04-11 08:32:54,485 | INFO | related_work_compare | DTS-DDPG episode 3/5 | reward=2141.7000 local=0.2120 neighbor=0.2837 cloud=0.5043 paper_hit=0.4957
+2026-04-11 08:33:03,848 | INFO | related_work_compare | DTS-DDPG episode 4/5 | reward=1918.8000 local=0.2107 neighbor=0.2842 cloud=0.5051 paper_hit=0.4949
+2026-04-11 08:33:13,572 | INFO | related_work_compare | DTS-DDPG episode 5/5 | reward=1912.2000 local=0.1891 neighbor=0.3195 cloud=0.4914 paper_hit=0.5086
+2026-04-11 08:33:14,501 | INFO | related_work_compare | TemporalGraph: reward_mean=2326.4600 local_hit_mean=0.2820 paper_hit_mean=0.4977 cloud_fetch_mean=0.5023
+2026-04-11 08:33:14,502 | INFO | related_work_compare | AWFDRL: reward_mean=2102.4000 local_hit_mean=0.2290 paper_hit_mean=0.5346 cloud_fetch_mean=0.4654
+2026-04-11 08:33:14,502 | INFO | related_work_compare | MAAFDRL: reward_mean=1264.2600 local_hit_mean=0.2244 paper_hit_mean=0.4134 cloud_fetch_mean=0.5866
+2026-04-11 08:33:14,502 | INFO | related_work_compare | DTS-DDPG: reward_mean=2047.9000 local_hit_mean=0.2110 paper_hit_mean=0.5047 cloud_fetch_mean=0.4953

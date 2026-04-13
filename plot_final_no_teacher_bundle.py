@@ -16,6 +16,9 @@ DISPLAY_NAMES = {
     "bsg_like": "BSG-like",
     "c_epsilon_greedy": "C-epsilon-greedy",
     "temporal_graph": "TemporalGraph",
+    "awfdrl": "AWFDRL",
+    "maafdrl": "MAAFDRL",
+    "dts_ddpg": "DTS-DDPG",
 }
 
 COLORS = {
@@ -23,6 +26,15 @@ COLORS = {
     "bsg_like": "#8d99ae",
     "c_epsilon_greedy": "#457b9d",
     "temporal_graph": "#d62828",
+    "awfdrl": "#1d3557",
+    "maafdrl": "#2a9d8f",
+    "dts_ddpg": "#7b2cbf",
+}
+
+RELATED_NAME_MAP = {
+    "Paper2-AWFDRL-like": "awfdrl",
+    "Paper3-MAAFDRL-like": "maafdrl",
+    "Paper4-DTS-DDPG-like": "dts_ddpg",
 }
 
 
@@ -30,6 +42,7 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Generate no-teacher comparison plots for the final TemporalGraph run.")
     p.add_argument("--input-dir", type=Path, default=Path("outputs/novel_realworld_ml1m_final"))
     p.add_argument("--output-dir", type=Path, default=Path("outputs/final_no_teacher_bundle"))
+    p.add_argument("--related-work-dir", type=Path, default=None)
     return p.parse_args()
 
 
@@ -39,13 +52,35 @@ def load_eval_csv(path: Path) -> list[dict[str, float]]:
         return [{k: float(v) for k, v in row.items()} for row in reader]
 
 
-def model_rows(input_dir: Path) -> dict[str, list[dict[str, float]]]:
-    return {
+def detect_related_work_dir(input_dir: Path, related_work_dir: Path | None) -> Path | None:
+    if related_work_dir is not None:
+        return related_work_dir
+    candidate = input_dir.parent / "related_work_compare"
+    return candidate if candidate.exists() else None
+
+
+def model_rows(input_dir: Path, related_work_dir: Path | None) -> dict[str, list[dict[str, float]]]:
+    rows_by_model: dict[str, list[dict[str, float]]] = {
         "random": load_eval_csv(input_dir / "random_eval.csv"),
         "bsg_like": load_eval_csv(input_dir / "bsg_like_eval.csv"),
         "c_epsilon_greedy": load_eval_csv(input_dir / "c_epsilon_greedy_eval.csv"),
         "temporal_graph": load_eval_csv(input_dir / "temporal_graph_eval.csv"),
     }
+    if related_work_dir is None:
+        return rows_by_model
+    path = related_work_dir / "episode_metrics.csv"
+    if not path.exists():
+        return rows_by_model
+    with path.open() as f:
+        reader = csv.DictReader(f)
+        grouped: dict[str, list[dict[str, float]]] = {}
+        for row in reader:
+            key = RELATED_NAME_MAP.get(row["scheme"])
+            if key is None:
+                continue
+            grouped.setdefault(key, []).append({k: float(v) for k, v in row.items() if k != "scheme"})
+        rows_by_model.update(grouped)
+    return rows_by_model
 
 
 def metric_means(rows_by_model: dict[str, list[dict[str, float]]], metric: str) -> dict[str, float]:
@@ -127,7 +162,9 @@ def edge_offload_gain(rows_by_model: dict[str, list[dict[str, float]]], out_path
     temporal = metric_means(rows_by_model, "paper_hit_rate")["temporal_graph"]
     gains = []
     labels = []
-    for name in ["random", "bsg_like", "c_epsilon_greedy"]:
+    for name in rows_by_model:
+        if name == "temporal_graph":
+            continue
         base = metric_means(rows_by_model, "paper_hit_rate")[name]
         gains.append(100.0 * (temporal - base) / max(base, 1e-8))
         labels.append(DISPLAY_NAMES[name])
@@ -153,11 +190,20 @@ def win_count_plot(rows_by_model: dict[str, list[dict[str, float]]], out_path: P
     }
     counts = []
     labels = []
-    episodes = len(next(iter(rows_by_model.values())))
+    episode_sets = [
+        {int(row["episode"]) for row in rows}
+        for rows in rows_by_model.values()
+        if rows
+    ]
+    shared_episodes = sorted(set.intersection(*episode_sets)) if episode_sets else []
     for label, (metric, mode) in metrics.items():
         wins = 0
-        for idx in range(episodes):
-            vals = {name: rows[idx][metric] for name, rows in rows_by_model.items()}
+        for episode in shared_episodes:
+            vals = {
+                name: next(row[metric] for row in rows if int(row["episode"]) == episode)
+                for name, rows in rows_by_model.items()
+                if any(int(row["episode"]) == episode for row in rows)
+            }
             best = max(vals.values()) if mode == "max" else min(vals.values())
             if abs(vals["temporal_graph"] - best) < 1e-10:
                 wins += 1
@@ -168,10 +214,10 @@ def win_count_plot(rows_by_model: dict[str, list[dict[str, float]]], out_path: P
     bars = ax.bar(labels, counts, color="#d62828", edgecolor="black", linewidth=0.6)
     ax.set_title("TemporalGraph Episode-Level Win Count")
     ax.set_ylabel("Winning Episodes")
-    ax.set_ylim(0, episodes + 0.5)
+    ax.set_ylim(0, len(shared_episodes) + 0.5)
     ax.grid(alpha=0.25, linestyle="--", linewidth=0.5, axis="y")
     for bar, val in zip(bars, counts):
-        ax.text(bar.get_x() + bar.get_width() / 2.0, val, f"{val}/{episodes}", ha="center", va="bottom", fontsize=9)
+        ax.text(bar.get_x() + bar.get_width() / 2.0, val, f"{val}/{len(shared_episodes)}", ha="center", va="bottom", fontsize=9)
     fig.tight_layout()
     fig.savefig(out_path, dpi=180)
     plt.close(fig)
@@ -181,7 +227,7 @@ def main() -> None:
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    rows_by_model = model_rows(args.input_dir)
+    rows_by_model = model_rows(args.input_dir, detect_related_work_dir(args.input_dir, args.related_work_dir))
 
     bar_metric(rows_by_model, "reward", "Mean Reward Comparison", "Mean Episode Reward", args.output_dir / "reward_mean_no_teacher.png")
     bar_metric(rows_by_model, "paper_hit_rate", "Mean Paper-Hit Comparison", "Mean Paper-Hit Rate", args.output_dir / "paper_hit_mean_no_teacher.png")
