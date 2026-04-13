@@ -273,7 +273,10 @@ def logits_to_cache_items(
         valid_slots = np.where(env.current_mask[b])[0].tolist()
         if valid_slots:
             mask_scores = adjusted[np.asarray(valid_slots, dtype=np.int64)]
-            adjusted[np.asarray(valid_slots, dtype=np.int64)] = (mask_scores - float(np.mean(mask_scores))) / max(float(np.std(mask_scores)), 1e-6)
+            min_sc = float(np.min(mask_scores))
+            max_sc = float(np.max(mask_scores))
+            adjusted[np.asarray(valid_slots, dtype=np.int64)] = (mask_scores - min_sc) / max(max_sc - min_sc, 1e-6)
+        max_local_score = max([float(env.current_candidate_scores[b, s]) for s in valid_slots], default=1e-6)
         local_norm = np.zeros((env.cfg.fp,), dtype=np.float64)
         if valid_slots:
             raw = np.maximum(env.current_candidate_scores[b, valid_slots], 0.0)
@@ -290,9 +293,12 @@ def logits_to_cache_items(
             for slot in valid_slots:
                 item = int(env.current_candidates[b, int(slot)])
                 overlap = sum(item in planned[int(n)] for n in neigh)
+                local_score = float(env.current_candidate_scores[b, int(slot)])
+                normalized_local = local_score / max(max_local_score, 1e-6)
+                local_protection = min(1.0, max(0.0, (normalized_local - 0.75) / 0.25)) if normalized_local > 0.75 else 0.0
+                
                 teacher_keep = max(0.0, float(teacher_norm[slot]))
-                local_keep = 0.60 + 0.90 * float(local_norm[slot]) + 0.18 * float(item in env.cache_items[b]) + 0.08 * teacher_keep
-                adjusted[slot] -= diversity_penalty * float(overlap) * max(0.10, 0.85 - local_keep)
+                adjusted[slot] -= diversity_penalty * float(overlap) * (1.0 - local_protection)
                 adjusted[slot] += 0.14 * float(item in env.cache_items[b])
                 adjusted[slot] += 1.15 * float(env.current_neighbor_shortage[b, int(slot)])
                 adjusted[slot] += 0.42 * float(local_norm[slot])
@@ -362,7 +368,10 @@ def sample_cache_items(
         valid_slots = np.where(env.current_mask[b])[0].tolist()
         if valid_slots:
             mask_scores = scores[torch.as_tensor(valid_slots, dtype=torch.long, device=device)]
-            scores[torch.as_tensor(valid_slots, dtype=torch.long, device=device)] = (mask_scores - mask_scores.mean()) / torch.clamp(mask_scores.std(unbiased=False), min=1e-6)
+            min_sc = mask_scores.min()
+            max_sc = mask_scores.max()
+            scores[torch.as_tensor(valid_slots, dtype=torch.long, device=device)] = (mask_scores - min_sc) / torch.clamp(max_sc - min_sc, min=1e-6)
+        max_local_score = max([float(env.current_candidate_scores[b, s]) for s in valid_slots], default=1e-6)
         neigh = np.where(env.current_adjacency[b] > 0.0)[0]
         neigh = neigh[neigh != b]
         local_norm = np.zeros((env.cfg.fp,), dtype=np.float64)
@@ -376,10 +385,13 @@ def sample_cache_items(
             item = int(env.current_candidates[b, slot])
             overlap = sum(item in planned[int(n)] for n in neigh)
             teacher_keep = max(0.0, float(teacher_norm[slot]))
-            local_keep = 0.60 + 0.90 * float(local_norm[slot]) + 0.18 * float(item in env.cache_items[b]) + 0.08 * teacher_keep
+            local_score = float(env.current_candidate_scores[b, int(slot)])
+            normalized_local = local_score / max(max_local_score, 1e-6)
+            local_protection = min(1.0, max(0.0, (normalized_local - 0.75) / 0.25)) if normalized_local > 0.75 else 0.0
+            
             scores[slot] = scores[slot] + 0.70 * float(local_prior[slot])
             scores[slot] = scores[slot] + teacher_guidance_weight * float(teacher_norm[slot])
-            scores[slot] = scores[slot] - diversity_penalty * float(overlap) * max(0.10, 0.85 - local_keep)
+            scores[slot] = scores[slot] - diversity_penalty * float(overlap) * (1.0 - local_protection)
             scores[slot] = scores[slot] + 0.14 * float(item in env.cache_items[b])
             scores[slot] = scores[slot] + 1.15 * float(env.current_neighbor_shortage[b, slot])
             scores[slot] = scores[slot] + 0.42 * float(local_norm[slot])

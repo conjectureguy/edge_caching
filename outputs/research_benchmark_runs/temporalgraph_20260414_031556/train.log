@@ -1,0 +1,18 @@
+2026-04-14 03:16:01,352 | INFO | novel_realworld_cache | Stage 1/5: loading ml-1m
+2026-04-14 03:16:03,618 | INFO | novel_realworld_cache | Dataset ready | dataset=ml-1m ratings=1000209 users=6040
+2026-04-14 03:16:03,618 | INFO | novel_realworld_cache | Stage 2/5: building real-world timestamp-aware temporal dataset
+2026-04-14 03:16:21,981 | INFO | novel_realworld_cache | Temporal dataset ready | samples=927729 train=837500 val=90229
+2026-04-14 03:16:21,981 | INFO | novel_realworld_cache | Stage 3/5: elastic federated training for real-world temporal encoder
+2026-04-14 03:16:22,030 | INFO | novel_realworld_cache | Real-world temporal federated training started: rounds=18 clients_per_round=120 users=6040
+/home/rahul/miniforge3/lib/python3.12/site-packages/torch/nn/modules/transformer.py:531: UserWarning: The PyTorch API of nested tensors is in prototype stage and will change in the near future. We recommend specifying layout=torch.jagged when constructing a nested tensor, as this layout receives active development, has better operator coverage, and works with torch.compile. (Triggered internally at /pytorch/aten/src/ATen/NestedTensorImpl.cpp:178.)
+  output = torch._nested_tensor_from_mask(
+2026-04-14 03:18:23,831 | INFO | novel_realworld_cache | Real-world temporal round 1/18 | train_loss=34.927490 val_loss=29.033250
+2026-04-14 03:19:22,703 | INFO | novel_realworld_cache | Real-world temporal round 2/18 | train_loss=34.799994 val_loss=28.642855
+2026-04-14 03:20:12,527 | INFO | novel_realworld_cache | Real-world temporal round 3/18 | train_loss=34.170631 val_loss=28.224743
+2026-04-14 03:21:11,996 | INFO | novel_realworld_cache | Real-world temporal round 4/18 | train_loss=34.088384 val_loss=27.634341
+2026-04-14 03:22:04,584 | INFO | novel_realworld_cache | Real-world temporal round 5/18 | train_loss=33.240470 val_loss=27.182885
+2026-04-14 03:23:01,272 | INFO | novel_realworld_cache | Real-world temporal round 6/18 | train_loss=32.679579 val_loss=26.526416
+2026-04-14 03:23:55,787 | INFO | novel_realworld_cache | Real-world temporal round 7/18 | train_loss=31.816005 val_loss=25.772143
+2026-04-14 03:25:01,599 | INFO | novel_realworld_cache | Real-world temporal round 8/18 | train_loss=30.989928 val_loss=24.473009
+2026-04-14 03:25:56,816 | INFO | novel_realworld_cache | Real-world temporal round 9/18 | train_loss=29.574404 val_loss=23.329974
+2026-04-14 03:26:56,759 | INFO | novel_realworld_cache | Real-world temporal round 10/18 | train_loss=28.471049 val_loss=22.437831
