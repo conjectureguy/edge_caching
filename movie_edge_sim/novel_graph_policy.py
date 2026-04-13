@@ -271,11 +271,11 @@ def logits_to_cache_items(
         seen: set[int] = set()
         adjusted = slot_scores[b].copy()
         valid_slots = np.where(env.current_mask[b])[0].tolist()
+        logit_scale = 1.0
         if valid_slots:
             mask_scores = adjusted[np.asarray(valid_slots, dtype=np.int64)]
-            min_sc = float(np.min(mask_scores))
-            max_sc = float(np.max(mask_scores))
-            adjusted[np.asarray(valid_slots, dtype=np.int64)] = (mask_scores - min_sc) / max(max_sc - min_sc, 1e-6)
+            if len(mask_scores) > 1:
+                logit_scale = max(float(np.std(mask_scores)), 1.0)
         max_local_score = max([float(env.current_candidate_scores[b, s]) for s in valid_slots], default=1e-6)
         local_norm = np.zeros((env.cfg.fp,), dtype=np.float64)
         if valid_slots:
@@ -298,7 +298,7 @@ def logits_to_cache_items(
                 local_protection = min(1.0, max(0.0, (normalized_local - 0.75) / 0.25)) if normalized_local > 0.75 else 0.0
                 
                 teacher_keep = max(0.0, float(teacher_norm[slot]))
-                adjusted[slot] -= diversity_penalty * float(overlap) * (1.0 - local_protection)
+                adjusted[slot] -= diversity_penalty * float(overlap) * logit_scale * (1.0 - local_protection)
                 adjusted[slot] += 0.14 * float(item in env.cache_items[b])
                 adjusted[slot] += 1.15 * float(env.current_neighbor_shortage[b, int(slot)])
                 adjusted[slot] += 0.42 * float(local_norm[slot])
@@ -366,11 +366,11 @@ def sample_cache_items(
     for b in order.tolist():
         scores = logits[b].clone()
         valid_slots = np.where(env.current_mask[b])[0].tolist()
+        logit_scale = 1.0
         if valid_slots:
             mask_scores = scores[torch.as_tensor(valid_slots, dtype=torch.long, device=device)]
-            min_sc = mask_scores.min()
-            max_sc = mask_scores.max()
-            scores[torch.as_tensor(valid_slots, dtype=torch.long, device=device)] = (mask_scores - min_sc) / torch.clamp(max_sc - min_sc, min=1e-6)
+            if len(mask_scores) > 1:
+                logit_scale = float(torch.clamp(mask_scores.std(unbiased=False), min=1.0).item())
         max_local_score = max([float(env.current_candidate_scores[b, s]) for s in valid_slots], default=1e-6)
         neigh = np.where(env.current_adjacency[b] > 0.0)[0]
         neigh = neigh[neigh != b]
@@ -391,7 +391,7 @@ def sample_cache_items(
             
             scores[slot] = scores[slot] + 0.70 * float(local_prior[slot])
             scores[slot] = scores[slot] + teacher_guidance_weight * float(teacher_norm[slot])
-            scores[slot] = scores[slot] - diversity_penalty * float(overlap) * (1.0 - local_protection)
+            scores[slot] = scores[slot] - diversity_penalty * float(overlap) * logit_scale * (1.0 - local_protection)
             scores[slot] = scores[slot] + 0.14 * float(item in env.cache_items[b])
             scores[slot] = scores[slot] + 1.15 * float(env.current_neighbor_shortage[b, slot])
             scores[slot] = scores[slot] + 0.42 * float(local_norm[slot])
