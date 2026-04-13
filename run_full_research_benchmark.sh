@@ -77,7 +77,7 @@ echo "[1/9] Training Temporal Encoder + Elastic FL + GNN policy"
   --episode-len 120 \
   --grid-size 300 \
   --policy-hidden-dim 160 \
-  --imitation-epochs 30 \
+  --imitation-epochs 40 \
   --episodes-per-epoch 10 \
   --policy-lr 0.0002 \
   --teacher-forcing-prob 0.90 \
@@ -97,7 +97,7 @@ echo "[1/9] Training Temporal Encoder + Elastic FL + GNN policy"
   --semantic-future-weight 0.05 \
   --freshness-score-weight 0.08 \
   --checkpoint-eval-episodes 6 \
-  --reinforce-epochs 0 \
+  --reinforce-epochs 15 \
   --eval-episodes 10 \
   --seed 42 \
   --log-level INFO \
