@@ -641,13 +641,21 @@ class NovelRealWorldCachingEnv:
         for b in order.tolist():
             neigh = np.where(self.current_adjacency[b] > 0.0)[0]
             neigh = neigh[neigh != b]
-            for slot in np.where(self.current_mask[b])[0].tolist():
+            valid_slots_b = np.where(self.current_mask[b])[0].tolist()
+            if not valid_slots_b:
+                continue
+            max_local_score = max(max([float(self.current_candidate_scores[b, s]) for s in valid_slots_b]), 1e-6)
+
+            for slot in valid_slots_b:
                 item = int(self.current_candidates[b, slot])
                 local_score = float(self.current_candidate_scores[b, slot])
                 overlap = sum(item in planned[int(n)] for n in neigh)
                 in_cache = float(item in self.cache_items[b])
                 trend_bonus = float(item == int(self.current_trend_items[b])) * float(self.current_trend_strength[b])
-                local_protection = min(1.0, max(0.0, local_score * 1.5))
+                
+                normalized_local = local_score / max_local_score
+                local_protection = min(1.0, max(0.0, (normalized_local - 0.75) / 0.25)) if normalized_local > 0.75 else 0.0
+                
                 score = (
                     self.cfg.teacher_locality_bonus * local_score
                     + 0.15 * float(self.global_popularity[item])
