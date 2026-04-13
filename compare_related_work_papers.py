@@ -64,6 +64,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--grid-size", type=float, default=300.0)
     p.add_argument("--eval-episodes", type=int, default=5)
     p.add_argument("--decode-diversity-penalty", type=float, default=0.35)
+    p.add_argument("--teacher-guidance-weight", type=float, default=0.55)
+    p.add_argument("--placement-interval", type=int, default=3)
     p.add_argument("--use-recorded-our-eval", action="store_true", default=False)
     p.add_argument(
         "--exclude-schemes",
@@ -379,6 +381,8 @@ def evaluate_our_policy(
     expected_node_dim: int,
     expected_candidate_dim: int,
     decode_diversity_penalty: float,
+    teacher_guidance_weight: float,
+    placement_interval: int,
 ) -> list[dict[str, float]]:
     model = model.to(device)
     model.eval()
@@ -387,6 +391,8 @@ def evaluate_our_policy(
     for ep in range(episodes):
         obs = env.reset(seed=seed + ep)
         done = False
+        step_idx = 0
+        last_action: np.ndarray | None = None
         reward_sum = 0.0
         local_sum = 0.0
         neighbor_sum = 0.0
@@ -400,13 +406,26 @@ def evaluate_our_policy(
             adj_t = torch.as_tensor(obs["adjacency"], dtype=torch.float32, device=dev)
             mask_t = torch.as_tensor(obs["action_mask"], dtype=torch.float32, device=dev)
             logits = model(node_t, cand_t, adj_t, mask_t)
-            chosen = logits_to_cache_items(logits, env, diversity_penalty=decode_diversity_penalty)
-            obs, reward, done, info = env.step_full_cache_items(chosen)
+            teacher_scores = env.cooperative_teacher_scores()
+            chosen = logits_to_cache_items(
+                logits,
+                env,
+                diversity_penalty=decode_diversity_penalty,
+                teacher_scores=teacher_scores,
+                teacher_guidance_weight=teacher_guidance_weight,
+            )
+            if last_action is None or step_idx % max(1, placement_interval) == 0:
+                action_to_apply = chosen
+            else:
+                action_to_apply = last_action
+            last_action = action_to_apply.copy()
+            obs, reward, done, info = env.step_full_cache_items(action_to_apply)
             reward_sum += float(reward)
             local_sum += float(info["local_hit_rate"])
             neighbor_sum += float(info["neighbor_fetch_rate"])
             cloud_sum += float(info["cloud_fetch_rate"])
             steps += 1
+            step_idx += 1
         rows.append(
             {
                 "episode": ep + 1,
@@ -648,6 +667,8 @@ def main() -> None:
             expected_node_dim=expected_node_dim,
             expected_candidate_dim=expected_candidate_dim,
             decode_diversity_penalty=args.decode_diversity_penalty,
+            teacher_guidance_weight=args.teacher_guidance_weight,
+            placement_interval=args.placement_interval,
         )
     awfdrl_rows = evaluate_policy(
         AttentionWeightedFDRLPolicy(),

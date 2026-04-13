@@ -74,12 +74,15 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--teacher-forcing-prob", type=float, default=0.8)
     p.add_argument("--teacher-forcing-final-prob", type=float, default=0.2)
     p.add_argument("--teacher-score-loss-weight", type=float, default=0.35)
+    p.add_argument("--teacher-rank-loss-weight", type=float, default=0.20)
     p.add_argument("--label-smoothing", type=float, default=0.05)
     p.add_argument("--decode-diversity-penalty", type=float, default=0.25)
+    p.add_argument("--teacher-guidance-weight", type=float, default=0.55)
     p.add_argument("--teacher-base-weight", type=float, default=0.45)
     p.add_argument("--teacher-attention-weight", type=float, default=0.20)
     p.add_argument("--teacher-mobility-weight", type=float, default=0.20)
     p.add_argument("--teacher-ddpg-weight", type=float, default=0.15)
+    p.add_argument("--placement-interval", type=int, default=3)
     p.add_argument("--disable-graph", action="store_true")
     p.add_argument("--disable-temporal", action="store_true")
     p.add_argument("--disable-mobility", action="store_true")
@@ -89,9 +92,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--semantic-score-weight", type=float, default=0.10)
     p.add_argument("--semantic-future-weight", type=float, default=0.05)
     p.add_argument("--freshness-score-weight", type=float, default=0.08)
+    p.add_argument("--checkpoint-eval-episodes", type=int, default=4)
     p.add_argument("--log-every-imitation-epoch", type=int, default=1)
     p.add_argument("--log-every-imitation-episode", type=int, default=1)
-    p.add_argument("--reinforce-epochs", type=int, default=6)
+    p.add_argument("--reinforce-epochs", type=int, default=0)
     p.add_argument("--reinforce-episodes-per-epoch", type=int, default=4)
     p.add_argument("--reinforce-lr", type=float, default=1e-4)
     p.add_argument("--reinforce-gamma", type=float, default=0.99)
@@ -461,8 +465,12 @@ def main() -> None:
         teacher_forcing_prob=args.teacher_forcing_prob,
         teacher_forcing_final_prob=args.teacher_forcing_final_prob,
         teacher_score_loss_weight=args.teacher_score_loss_weight,
+        teacher_rank_loss_weight=args.teacher_rank_loss_weight,
         label_smoothing=args.label_smoothing,
         decode_diversity_penalty=args.decode_diversity_penalty,
+        teacher_guidance_weight=args.teacher_guidance_weight,
+        placement_interval=args.placement_interval,
+        checkpoint_eval_episodes=args.checkpoint_eval_episodes,
     )
     imitation_hist = train_graph_cache_policy_imitation(
         env,
@@ -484,6 +492,9 @@ def main() -> None:
             entropy_weight=args.reinforce_entropy_weight,
             device=args.device,
             decode_diversity_penalty=args.decode_diversity_penalty,
+            teacher_guidance_weight=args.teacher_guidance_weight,
+            placement_interval=args.placement_interval,
+            checkpoint_eval_episodes=args.checkpoint_eval_episodes,
         )
         reinforce_hist = fine_tune_graph_cache_policy_reinforce(
             env,
@@ -516,6 +527,8 @@ def main() -> None:
         seed=args.seed + 3000,
         device=args.device,
         decode_diversity_penalty=args.decode_diversity_penalty,
+        teacher_guidance_weight=args.teacher_guidance_weight,
+        placement_interval=args.placement_interval,
     )
     save_eval(args.output_dir, "random", random_rows)
     save_eval(args.output_dir, "bsg_like", bsg_rows)
@@ -524,8 +537,6 @@ def main() -> None:
     save_eval(args.output_dir, "temporal_graph", learned_rows)
 
     summary_lines = [
-        f"Ablations: graph={'off' if args.disable_graph else 'on'} temporal={'off' if args.disable_temporal else 'on'} mobility={'off' if args.disable_mobility else 'on'} trend={'off' if args.disable_trend else 'on'} semantic={'off' if args.disable_semantic else 'on'} teacher_score_loss_weight={args.teacher_score_loss_weight:.3f} decode_diversity_penalty={args.decode_diversity_penalty:.3f}",
-        f"Reinforce: epochs={args.reinforce_epochs} episodes_per_epoch={args.reinforce_episodes_per_epoch} lr={args.reinforce_lr:.6f} gamma={args.reinforce_gamma:.3f} entropy_weight={args.reinforce_entropy_weight:.6f}",
         summarize("Random", random_rows),
         summarize("BSG-like", bsg_rows),
         summarize("C-epsilon-greedy", c_eps_rows),

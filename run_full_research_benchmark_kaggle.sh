@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_ROOT="/home/rahul/Desktop/edge_caching"
+REPO_ROOT="/kaggle/working/edge_caching"
 cd "$REPO_ROOT"
 
-PYTHON_BIN="${PYTHON_BIN:-/home/rahul/miniforge3/bin/python}"
+PYTHON_BIN="${PYTHON_BIN:-/opt/conda/bin/python}"
 DEVICE="${DEVICE:-cpu}"
 DATASET_NAME="${DATASET_NAME:-ml-1m}"
 ROOT_BASE="${ROOT_BASE:-outputs/research_benchmark_runs}"

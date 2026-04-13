@@ -1,0 +1,7 @@
+Run dir: outputs/_smoke_temporalgraph_upgrade
+Dataset: ml-100k
+Evaluation episodes: 2
+TemporalGraph: reward_mean=24.4500 local_hit_mean=0.2326 paper_hit_mean=0.2847 cloud_fetch_mean=0.5486
+AWFDRL: reward_mean=24.7500 local_hit_mean=0.1647 paper_hit_mean=0.2688 cloud_fetch_mean=0.5645
+MAAFDRL: reward_mean=9.4000 local_hit_mean=0.1104 paper_hit_mean=0.1535 cloud_fetch_mean=0.7215
+DTS-DDPG: reward_mean=23.0000 local_hit_mean=0.2882 paper_hit_mean=0.3646 cloud_fetch_mean=0.5521

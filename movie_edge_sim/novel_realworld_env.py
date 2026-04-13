@@ -123,6 +123,7 @@ class NovelRealWorldCachingEnv:
         temporal_scores: np.ndarray,
         recent_scores: np.ndarray,
         future_scores: np.ndarray,
+        neighbor_scores: np.ndarray,
         cache_items: np.ndarray,
         trend_item: int,
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -135,17 +136,21 @@ class NovelRealWorldCachingEnv:
         recent_scores[0] = 0.0
         future_scores = future_scores.copy()
         future_scores[0] = 0.0
+        neighbor_scores = neighbor_scores.copy()
+        neighbor_scores[0] = 0.0
 
         top_score = np.argsort(score[1:])[-fp:][::-1] + 1
         top_temporal = np.argsort(temporal_scores[1:])[-max(self.cfg.cache_capacity, fp // 3) :][::-1] + 1
         top_recent = np.argsort(recent_scores[1:])[-max(self.cfg.cache_capacity, fp // 4) :][::-1] + 1
         top_future = np.argsort(future_scores[1:])[-max(4, fp // 5) :][::-1] + 1
+        top_neighbor = np.argsort(neighbor_scores[1:])[-max(4, fp // 5) :][::-1] + 1
         top_pop = np.argsort(self.global_popularity[1:])[-max(4, self.cfg.cache_capacity // 2) :][::-1] + 1
 
         candidate_pool: set[int] = set(int(item) for item in top_score.tolist())
         candidate_pool.update(int(item) for item in top_temporal.tolist())
         candidate_pool.update(int(item) for item in top_recent.tolist())
         candidate_pool.update(int(item) for item in top_future.tolist())
+        candidate_pool.update(int(item) for item in top_neighbor.tolist())
         candidate_pool.update(int(item) for item in top_pop.tolist())
         candidate_pool.update(int(item) for item in cache_items.tolist() if int(item) > 0)
         if trend_item > 0:
@@ -160,11 +165,12 @@ class NovelRealWorldCachingEnv:
         rescue_bonus += 0.10 * score_scale * np.isin(pool, top_temporal)
         rescue_bonus += 0.09 * score_scale * np.isin(pool, top_recent)
         rescue_bonus += 0.07 * score_scale * np.isin(pool, top_future)
+        rescue_bonus += 0.06 * score_scale * np.isin(pool, top_neighbor)
         rescue_bonus += 0.05 * score_scale * np.isin(pool, cache_items)
         if trend_item > 0:
             rescue_bonus += 0.04 * score_scale * (pool == int(trend_item))
 
-        pooled_scores = score[pool] + rescue_bonus
+        pooled_scores = score[pool] + 0.08 * neighbor_scores[pool] + rescue_bonus
         order = np.argsort(pooled_scores)[::-1]
         chosen = pool[order[:fp]]
         chosen_scores = pooled_scores[order[:fp]]
@@ -235,7 +241,7 @@ class NovelRealWorldCachingEnv:
 
     def _adjacency(self, sbs_positions: np.ndarray) -> np.ndarray:
         d = np.sqrt(((sbs_positions[:, None, :] - sbs_positions[None, :, :]) ** 2).sum(axis=2))
-        adj = (d <= self.cfg.neighbor_radius).astype(np.float32)
+        adj = np.clip(1.0 - (d / max(self.cfg.neighbor_radius, 1e-6)), 0.0, 1.0).astype(np.float32)
         np.fill_diagonal(adj, 1.0)
         return adj
 
@@ -416,15 +422,22 @@ class NovelRealWorldCachingEnv:
         for b in range(self.cfg.n_sbs):
             ue_idx = np.where(association == b)[0]
             future_ue_idx = np.where(future_association == b)[0]
+            neigh = np.where(self.current_adjacency[b] > 0.0)[0]
+            neigh = neigh[neigh != b]
+            neighbor_ue_idx = np.where(np.isin(association, neigh))[0]
             probs = self._temporal_probs_for_ues(ue_idx)
             future_probs = self._temporal_probs_for_ues(future_ue_idx)
+            neighbor_probs = self._temporal_probs_for_ues(neighbor_ue_idx)
             current_freshness = self._freshness_weights(ue_idx)
             future_freshness = self._freshness_weights(future_ue_idx)
+            neighbor_freshness = self._freshness_weights(neighbor_ue_idx)
             current_profile = self._semantic_profile(ue_idx)
             future_profile = self._semantic_profile(future_ue_idx)
             active_recent = np.zeros((self.num_items + 1,), dtype=np.float64)
             agg = np.zeros((self.num_items + 1,), dtype=np.float64)
             future_agg = np.zeros((self.num_items + 1,), dtype=np.float64)
+            neighbor_agg = np.zeros((self.num_items + 1,), dtype=np.float64)
+            neighbor_recent = np.zeros((self.num_items + 1,), dtype=np.float64)
             trend_item = int(self.current_trend_items[b])
             if probs.shape[0] == 0 and not self.cfg.use_temporal_features:
                 active_recent = np.bincount(self.ue_context_items[ue_idx, -1], minlength=self.num_items + 1).astype(np.float64)
@@ -457,6 +470,24 @@ class NovelRealWorldCachingEnv:
                     else:
                         future_agg = future_probs.sum(axis=0)
                     future_agg[0] = 0.0
+                if neighbor_probs.shape[0] > 0:
+                    if neighbor_freshness.size > 0:
+                        neighbor_agg = (neighbor_probs * neighbor_freshness[:, None]).sum(axis=0)
+                    else:
+                        neighbor_agg = neighbor_probs.sum(axis=0)
+                    neighbor_agg[0] = 0.0
+                    neighbor_recent_items = self.ue_context_items[neighbor_ue_idx, -2:].reshape(-1)
+                    if neighbor_recent_items.size > 0:
+                        neighbor_recent_weights = np.repeat(np.maximum(neighbor_freshness, 1e-6), 2) * np.tile(
+                            np.asarray([0.75, 1.0], dtype=np.float64),
+                            len(neighbor_ue_idx),
+                        )
+                        neighbor_recent = np.bincount(
+                            neighbor_recent_items,
+                            weights=neighbor_recent_weights,
+                            minlength=self.num_items + 1,
+                        ).astype(np.float64)
+                        neighbor_recent /= max(neighbor_recent.sum(), 1.0)
                 trend = np.zeros((self.num_items + 1,), dtype=np.float64)
                 if self.cfg.use_trend_features and trend_item > 0:
                     trend[trend_item] = float(self.current_trend_strength[b])
@@ -477,11 +508,14 @@ class NovelRealWorldCachingEnv:
                     + (self.cfg.semantic_score_weight * semantic if self.cfg.use_semantic_features else 0.0)
                     + self.cfg.freshness_score_weight * freshness_recent
                 )
+            neighbor_scores = 0.55 * neighbor_agg + 0.25 * neighbor_recent + 0.20 * self.global_popularity
+            score = score + 0.05 * neighbor_scores
             top, scores = self._select_candidate_pool(
                 score=score,
                 temporal_scores=agg,
                 recent_scores=active_recent,
                 future_scores=future_agg,
+                neighbor_scores=neighbor_scores,
                 cache_items=self.cache_items[b],
                 trend_item=trend_item,
             )
