@@ -647,11 +647,12 @@ class NovelRealWorldCachingEnv:
                 overlap = sum(item in planned[int(n)] for n in neigh)
                 in_cache = float(item in self.cache_items[b])
                 trend_bonus = float(item == int(self.current_trend_items[b])) * float(self.current_trend_strength[b])
+                local_protection = min(1.0, max(0.0, local_score * 1.5))
                 score = (
                     self.cfg.teacher_locality_bonus * local_score
                     + 0.15 * float(self.global_popularity[item])
                     + 0.20 * trend_bonus
-                    - self.cfg.teacher_diversity_penalty * float(overlap)
+                    - self.cfg.teacher_diversity_penalty * float(overlap) * (1.0 - local_protection)
                     + 0.20 * in_cache
                     + 0.16 * float(self.current_semantic_affinity[b, slot])
                     + 0.12 * float(self.current_freshness_relevance[b, slot])

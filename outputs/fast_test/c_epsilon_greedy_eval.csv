@@ -1,0 +1,3 @@
+episode,reward,local_hit_rate,neighbor_fetch_rate,cloud_fetch_rate,paper_hit_rate
+1,25.40000000,0.22027778,0.00555556,0.77416667,0.22583333
+2,23.90000000,0.20130952,0.00000000,0.69869048,0.20130952

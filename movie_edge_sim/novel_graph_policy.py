@@ -271,6 +271,9 @@ def logits_to_cache_items(
         seen: set[int] = set()
         adjusted = slot_scores[b].copy()
         valid_slots = np.where(env.current_mask[b])[0].tolist()
+        if valid_slots:
+            mask_scores = adjusted[np.asarray(valid_slots, dtype=np.int64)]
+            adjusted[np.asarray(valid_slots, dtype=np.int64)] = (mask_scores - float(np.mean(mask_scores))) / max(float(np.std(mask_scores)), 1e-6)
         local_norm = np.zeros((env.cfg.fp,), dtype=np.float64)
         if valid_slots:
             raw = np.maximum(env.current_candidate_scores[b, valid_slots], 0.0)
@@ -357,6 +360,9 @@ def sample_cache_items(
     for b in order.tolist():
         scores = logits[b].clone()
         valid_slots = np.where(env.current_mask[b])[0].tolist()
+        if valid_slots:
+            mask_scores = scores[torch.as_tensor(valid_slots, dtype=torch.long, device=device)]
+            scores[torch.as_tensor(valid_slots, dtype=torch.long, device=device)] = (mask_scores - mask_scores.mean()) / torch.clamp(mask_scores.std(unbiased=False), min=1e-6)
         neigh = np.where(env.current_adjacency[b] > 0.0)[0]
         neigh = neigh[neigh != b]
         local_norm = np.zeros((env.cfg.fp,), dtype=np.float64)
