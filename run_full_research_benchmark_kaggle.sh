@@ -4,8 +4,9 @@ set -euo pipefail
 REPO_ROOT="/kaggle/working/edge_caching"
 cd "$REPO_ROOT"
 
-PYTHON_BIN="${PYTHON_BIN:-/opt/conda/bin/python}"
-DEVICE="${DEVICE:-cpu}"
+PYTHON_BIN="${PYTHON_BIN:-$(which python3)}"
+# PYTHON_BIN="${PYTHON_BIN:-/opt/conda/bin/python}"
+DEVICE="${DEVICE:-cuda}"
 DATASET_NAME="${DATASET_NAME:-ml-1m}"
 ROOT_BASE="${ROOT_BASE:-outputs/research_benchmark_runs}"
 RUN_TAG="${RUN_TAG:-$(date +%Y%m%d_%H%M%S)}"
