@@ -1,0 +1,23 @@
+2026-04-14 13:57:10,791 | INFO | related_work_compare | Stage 1/4: loading dataset ml-100k
+2026-04-14 13:57:10,991 | INFO | related_work_compare | Stage 2/4: loading trained temporal encoder from outputs/fast_100k_runs/temporalgraph_20260414_135254/novel_realworld_main/realworld_temporal_encoder.pt
+2026-04-14 13:57:11,016 | INFO | related_work_compare | Loaded compatible outputs/fast_100k_runs/temporalgraph_20260414_135254/novel_realworld_main/realworld_temporal_encoder.pt | matched=5 skipped=60
+2026-04-14 13:57:11,016 | INFO | related_work_compare | Skipped temporal keys: mask_token, pos_embed, embed.weight, user_embed.weight, hour_embed.weight, time2vec.periodic.weight, time2vec.periodic.bias, temporal_kernel_proj.0.weight ...
+2026-04-14 13:57:11,016 | INFO | related_work_compare | Stage 3/4: building evaluation environment
+/home/rahul/miniforge3/lib/python3.12/site-packages/torch/nn/modules/transformer.py:531: UserWarning: The PyTorch API of nested tensors is in prototype stage and will change in the near future. We recommend specifying layout=torch.jagged when constructing a nested tensor, as this layout receives active development, has better operator coverage, and works with torch.compile. (Triggered internally at /pytorch/aten/src/ATen/NestedTensorImpl.cpp:178.)
+  output = torch._nested_tensor_from_mask(
+2026-04-14 13:57:11,156 | INFO | related_work_compare | Environment ready | node_dim=137 candidate_dim=74
+2026-04-14 13:57:11,156 | INFO | related_work_compare | Stage 4/4: evaluating our method and paper-inspired baselines
+2026-04-14 13:57:11,161 | INFO | related_work_compare | Evaluating TemporalGraph in the same fresh harness as the paper-inspired baselines
+2026-04-14 13:57:17,480 | INFO | related_work_compare | AWFDRL episode 1/3 | reward=158.5000 local=0.2516 neighbor=0.0703 cloud=0.5532 paper_hit=0.3218
+2026-04-14 13:57:19,017 | INFO | related_work_compare | AWFDRL episode 2/3 | reward=187.9000 local=0.2817 neighbor=0.0519 cloud=0.5664 paper_hit=0.3336
+2026-04-14 13:57:20,151 | INFO | related_work_compare | AWFDRL episode 3/3 | reward=183.9000 local=0.3173 neighbor=0.0883 cloud=0.4944 paper_hit=0.4056
+2026-04-14 13:57:21,508 | INFO | related_work_compare | MAAFDRL episode 1/3 | reward=145.9000 local=0.2688 neighbor=0.0936 cloud=0.6126 paper_hit=0.3624
+2026-04-14 13:57:22,640 | INFO | related_work_compare | MAAFDRL episode 2/3 | reward=125.0000 local=0.1946 neighbor=0.1017 cloud=0.6038 paper_hit=0.2963
+2026-04-14 13:57:24,238 | INFO | related_work_compare | MAAFDRL episode 3/3 | reward=112.9000 local=0.2478 neighbor=0.1435 cloud=0.5587 paper_hit=0.3913
+2026-04-14 13:57:25,351 | INFO | related_work_compare | DTS-DDPG episode 1/3 | reward=229.8000 local=0.3025 neighbor=0.1329 cloud=0.5145 paper_hit=0.4355
+2026-04-14 13:57:26,903 | INFO | related_work_compare | DTS-DDPG episode 2/3 | reward=77.8000 local=0.0927 neighbor=0.1468 cloud=0.6855 paper_hit=0.2395
+2026-04-14 13:57:28,527 | INFO | related_work_compare | DTS-DDPG episode 3/3 | reward=87.3000 local=0.1590 neighbor=0.1640 cloud=0.6519 paper_hit=0.3231
+2026-04-14 13:57:29,533 | INFO | related_work_compare | TemporalGraph: reward_mean=247.6333 local_hit_mean=0.4327 paper_hit_mean=0.4696 cloud_fetch_mean=0.4554
+2026-04-14 13:57:29,533 | INFO | related_work_compare | AWFDRL: reward_mean=176.7667 local_hit_mean=0.2835 paper_hit_mean=0.3537 cloud_fetch_mean=0.5380
+2026-04-14 13:57:29,533 | INFO | related_work_compare | MAAFDRL: reward_mean=127.9333 local_hit_mean=0.2371 paper_hit_mean=0.3500 cloud_fetch_mean=0.5917
+2026-04-14 13:57:29,533 | INFO | related_work_compare | DTS-DDPG: reward_mean=131.6333 local_hit_mean=0.1848 paper_hit_mean=0.3327 cloud_fetch_mean=0.6173

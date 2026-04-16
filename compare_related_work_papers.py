@@ -324,21 +324,28 @@ def evaluate_policy(
     env: NovelRealWorldCachingEnv,
     episodes: int,
     seed: int,
-    logger: logging.Logger | None = None,
     log_every_episode: int = 1,
+    logger: logging.Logger | None = None,
+    placement_interval: int = 1,
 ) -> list[dict[str, float]]:
     rows: list[dict[str, float]] = []
-    policy.reset(env)
     for ep in range(episodes):
         obs = env.reset(seed=seed + ep)
+        policy.reset(env)
         done = False
+        step_idx = 0
+        last_action: np.ndarray | None = None
         reward_sum = 0.0
         local_sum = 0.0
         neighbor_sum = 0.0
         cloud_sum = 0.0
         steps = 0
         while not done:
-            chosen = policy.select_items(obs, env)
+            if last_action is None or step_idx % max(1, placement_interval) == 0:
+                chosen = policy.select_items(obs, env)
+            else:
+                chosen = last_action.copy()
+            last_action = chosen.copy()
             next_obs, reward, done, info = env.step_full_cache_items(chosen)
             policy.update(env, obs, chosen, info)
             reward_sum += float(reward)
@@ -346,6 +353,7 @@ def evaluate_policy(
             neighbor_sum += float(info["neighbor_fetch_rate"])
             cloud_sum += float(info["cloud_fetch_rate"])
             steps += 1
+            step_idx += 1
             obs = next_obs
         row = {
             "episode": ep + 1,
@@ -670,6 +678,7 @@ def main() -> None:
             teacher_guidance_weight=args.teacher_guidance_weight,
             placement_interval=args.placement_interval,
         )
+    logger.info("Evaluating AWFDRL baseline")
     awfdrl_rows = evaluate_policy(
         AttentionWeightedFDRLPolicy(),
         env,
@@ -677,7 +686,9 @@ def main() -> None:
         seed=args.seed + 4000,
         logger=logger,
         log_every_episode=args.log_every_episode,
+        placement_interval=args.placement_interval,
     )
+    logger.info("Evaluating MAAFDRL baseline")
     maafdrl_rows = evaluate_policy(
         MobilityAwareAsyncFDRLPolicy(),
         env,
@@ -685,14 +696,17 @@ def main() -> None:
         seed=args.seed + 5000,
         logger=logger,
         log_every_episode=args.log_every_episode,
+        placement_interval=args.placement_interval,
     )
+    logger.info("Evaluating DTS-DDPG baseline")
     ddpg_rows = evaluate_policy(
-        CooperativeDDPGPolicy(),
+        CooperativeDDPGPolicy(placement_interval=args.placement_interval),
         env,
         episodes=args.eval_episodes,
         seed=args.seed + 6000,
         logger=logger,
         log_every_episode=args.log_every_episode,
+        placement_interval=1,
     )
 
     results = [

@@ -1,0 +1,6 @@
+Related-work summary file: /home/rahul/Desktop/edge_caching/outputs/research_benchmark_runs/temporalgraph_20260415_041120_filtered_no_awfdrl/related_work_compare/summary.csv
+Our reward_mean=2512.650000 | best=TemporalGraph
+Our local_hit_mean=0.312595 | best=TemporalGraph
+Our paper_hit_mean=0.482143 | best=TemporalGraph
+Our cloud_fetch_mean=0.517023 | best=TemporalGraph
+Ours best on all four summary metrics: yes

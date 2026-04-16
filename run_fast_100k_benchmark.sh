@@ -42,7 +42,7 @@ echo "[1/4] Training Temporal Encoder + Elastic FL + GNN policy"
   --clients-per-round 40 \
   --local-epochs 1 \
   --temporal-batch-size 32 \
-  --n-sbs 4 \
+  --n-sbs 8 \
   --n-ues 60 \
   --cache-capacity 10 \
   --fp 30 \
@@ -54,8 +54,8 @@ echo "[1/4] Training Temporal Encoder + Elastic FL + GNN policy"
   --policy-lr 0.0004 \
   --teacher-forcing-prob 0.90 \
   --teacher-forcing-final-prob 0.05 \
-  --decode-diversity-penalty 0.18 \
-  --teacher-guidance-weight 0.70 \
+  --decode-diversity-penalty 0.35 \
+  --teacher-guidance-weight 1.50 \
   --checkpoint-eval-episodes 3 \
   --reinforce-epochs 4 \
   --eval-episodes 3 \
@@ -71,13 +71,13 @@ echo "[2/4] Running related-work benchmark"
   --device "${DEVICE}" \
   --eval-episodes 3 \
   --episode-len 40 \
-  --n-sbs 4 \
+  --n-sbs 8 \
   --n-ues 60 \
   --cache-capacity 10 \
   --fp 30 \
   --grid-size 200 \
-  --decode-diversity-penalty 0.18 \
-  --teacher-guidance-weight 0.70 \
+  --decode-diversity-penalty 0.35 \
+  --teacher-guidance-weight 1.50 \
   --log-level INFO \
   2>&1 | tee "${ROOT}/related_work.log"
 

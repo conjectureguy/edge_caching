@@ -34,8 +34,8 @@ class RealWorldEnvConfig:
     active_hour_scale: float = 1.2
     trend_refresh_steps: int = 8
     trend_decay: float = 0.85
-    teacher_diversity_penalty: float = 0.45
-    teacher_locality_bonus: float = 1.1
+    teacher_diversity_penalty: float = 0.75
+    teacher_locality_bonus: float = 0.90
     teacher_use_ensemble: bool = True
     teacher_base_weight: float = 0.45
     teacher_attention_weight: float = 0.20

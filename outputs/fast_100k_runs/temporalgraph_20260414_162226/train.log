@@ -1,0 +1,92 @@
+2026-04-14 16:22:28,255 | INFO | novel_realworld_cache | Stage 1/5: loading ml-100k
+2026-04-14 16:22:28,420 | INFO | novel_realworld_cache | Dataset ready | dataset=ml-100k ratings=100000 users=943
+2026-04-14 16:22:28,420 | INFO | novel_realworld_cache | Stage 2/5: building real-world timestamp-aware temporal dataset
+2026-04-14 16:22:29,379 | INFO | novel_realworld_cache | Temporal dataset ready | samples=92456 train=83642 val=8814
+2026-04-14 16:22:29,379 | INFO | novel_realworld_cache | Stage 3/5: elastic federated training for real-world temporal encoder
+2026-04-14 16:22:29,386 | INFO | novel_realworld_cache | Real-world temporal federated training started: rounds=3 clients_per_round=40 users=943
+/home/rahul/miniforge3/lib/python3.12/site-packages/torch/nn/modules/transformer.py:531: UserWarning: The PyTorch API of nested tensors is in prototype stage and will change in the near future. We recommend specifying layout=torch.jagged when constructing a nested tensor, as this layout receives active development, has better operator coverage, and works with torch.compile. (Triggered internally at /pytorch/aten/src/ATen/NestedTensorImpl.cpp:178.)
+  output = torch._nested_tensor_from_mask(
+2026-04-14 16:22:38,686 | INFO | novel_realworld_cache | Real-world temporal round 1/3 | train_loss=26.932750 val_loss=19.881970
+2026-04-14 16:22:47,884 | INFO | novel_realworld_cache | Real-world temporal round 2/3 | train_loss=25.362552 val_loss=19.152571
+2026-04-14 16:22:56,932 | INFO | novel_realworld_cache | Real-world temporal round 3/3 | train_loss=24.959221 val_loss=18.292598
+2026-04-14 16:22:56,936 | INFO | novel_realworld_cache | Stage 4/5: building novel real-world caching environment
+2026-04-14 16:22:57,118 | INFO | novel_realworld_cache | Environment ready | node_dim=73 candidate_dim=42
+2026-04-14 16:22:57,118 | INFO | novel_realworld_cache | Stage 5/5: training temporal-graph cooperative cache policy
+2026-04-14 16:23:00,037 | INFO | novel_realworld_cache | Imitation epoch 1/8 episode 1/4 complete | teacher_forcing=0.900 reward=5.6625 local_hit=0.3690 paper_hit=0.5130
+2026-04-14 16:23:02,914 | INFO | novel_realworld_cache | Imitation epoch 1/8 episode 2/4 complete | teacher_forcing=0.900 reward=6.1875 local_hit=0.3984 paper_hit=0.5346
+2026-04-14 16:23:05,933 | INFO | novel_realworld_cache | Imitation epoch 1/8 episode 3/4 complete | teacher_forcing=0.900 reward=5.6100 local_hit=0.3518 paper_hit=0.5287
+2026-04-14 16:23:08,785 | INFO | novel_realworld_cache | Imitation epoch 1/8 episode 4/4 complete | teacher_forcing=0.900 reward=5.9706 local_hit=0.3719 paper_hit=0.5431
+2026-04-14 16:23:16,455 | INFO | novel_realworld_cache | Imitation epoch 1/8 summary | loss=2.140493 reward=5.9706 local_hit=0.3719 paper_hit=0.5431 sel_reward=255.4333 sel_local=0.4300 sel_paper=0.5021 best_score=1250.2872
+2026-04-14 16:23:19,548 | INFO | novel_realworld_cache | Imitation epoch 2/8 episode 1/4 complete | teacher_forcing=0.779 reward=4.5550 local_hit=0.3248 paper_hit=0.5056
+2026-04-14 16:23:22,285 | INFO | novel_realworld_cache | Imitation epoch 2/8 episode 2/4 complete | teacher_forcing=0.779 reward=5.6237 local_hit=0.3903 paper_hit=0.5510
+2026-04-14 16:23:25,348 | INFO | novel_realworld_cache | Imitation epoch 2/8 episode 3/4 complete | teacher_forcing=0.779 reward=5.7750 local_hit=0.4098 paper_hit=0.5728
+2026-04-14 16:23:28,143 | INFO | novel_realworld_cache | Imitation epoch 2/8 episode 4/4 complete | teacher_forcing=0.779 reward=5.5606 local_hit=0.3880 paper_hit=0.5668
+2026-04-14 16:23:35,476 | INFO | novel_realworld_cache | Imitation epoch 2/8 summary | loss=1.983848 reward=5.5606 local_hit=0.3880 paper_hit=0.5668 sel_reward=306.6333 sel_local=0.5205 sel_paper=0.5810 best_score=1465.2411
+2026-04-14 16:23:38,201 | INFO | novel_realworld_cache | Imitation epoch 3/8 episode 1/4 complete | teacher_forcing=0.657 reward=6.1125 local_hit=0.3690 paper_hit=0.5218
+2026-04-14 16:23:41,149 | INFO | novel_realworld_cache | Imitation epoch 3/8 episode 2/4 complete | teacher_forcing=0.657 reward=5.4388 local_hit=0.3522 paper_hit=0.5180
+2026-04-14 16:23:44,124 | INFO | novel_realworld_cache | Imitation epoch 3/8 episode 3/4 complete | teacher_forcing=0.657 reward=5.2792 local_hit=0.3662 paper_hit=0.5176
+2026-04-14 16:23:47,138 | INFO | novel_realworld_cache | Imitation epoch 3/8 episode 4/4 complete | teacher_forcing=0.657 reward=4.9369 local_hit=0.3696 paper_hit=0.5079
+2026-04-14 16:23:55,138 | INFO | novel_realworld_cache | Imitation epoch 3/8 summary | loss=1.952061 reward=4.9369 local_hit=0.3696 paper_hit=0.5079 sel_reward=246.7000 sel_local=0.4580 sel_paper=0.5307 best_score=1465.2411
+2026-04-14 16:23:58,489 | INFO | novel_realworld_cache | Imitation epoch 4/8 episode 1/4 complete | teacher_forcing=0.536 reward=7.0350 local_hit=0.4997 paper_hit=0.6048
+2026-04-14 16:24:01,623 | INFO | novel_realworld_cache | Imitation epoch 4/8 episode 2/4 complete | teacher_forcing=0.536 reward=6.2988 local_hit=0.4257 paper_hit=0.5088
+2026-04-14 16:24:04,770 | INFO | novel_realworld_cache | Imitation epoch 4/8 episode 3/4 complete | teacher_forcing=0.536 reward=6.3825 local_hit=0.4202 paper_hit=0.5349
+2026-04-14 16:24:07,890 | INFO | novel_realworld_cache | Imitation epoch 4/8 episode 4/4 complete | teacher_forcing=0.536 reward=6.3300 local_hit=0.4171 paper_hit=0.5392
+2026-04-14 16:24:15,313 | INFO | novel_realworld_cache | Imitation epoch 4/8 summary | loss=1.989873 reward=6.3300 local_hit=0.4171 paper_hit=0.5392 sel_reward=288.3333 sel_local=0.4724 sel_paper=0.5436 best_score=1465.2411
+2026-04-14 16:24:18,326 | INFO | novel_realworld_cache | Imitation epoch 5/8 episode 1/4 complete | teacher_forcing=0.414 reward=6.9700 local_hit=0.5526 paper_hit=0.6607
+2026-04-14 16:24:21,356 | INFO | novel_realworld_cache | Imitation epoch 5/8 episode 2/4 complete | teacher_forcing=0.414 reward=6.7725 local_hit=0.5080 paper_hit=0.6181
+2026-04-14 16:24:24,340 | INFO | novel_realworld_cache | Imitation epoch 5/8 episode 3/4 complete | teacher_forcing=0.414 reward=6.3608 local_hit=0.4809 paper_hit=0.6024
+2026-04-14 16:24:27,450 | INFO | novel_realworld_cache | Imitation epoch 5/8 episode 4/4 complete | teacher_forcing=0.414 reward=6.7838 local_hit=0.4742 paper_hit=0.5921
+2026-04-14 16:24:34,755 | INFO | novel_realworld_cache | Imitation epoch 5/8 summary | loss=1.976117 reward=6.7838 local_hit=0.4742 paper_hit=0.5921 sel_reward=233.6667 sel_local=0.4090 sel_paper=0.4975 best_score=1465.2411
+2026-04-14 16:24:37,778 | INFO | novel_realworld_cache | Imitation epoch 6/8 episode 1/4 complete | teacher_forcing=0.293 reward=5.2700 local_hit=0.3791 paper_hit=0.4945
+2026-04-14 16:24:40,799 | INFO | novel_realworld_cache | Imitation epoch 6/8 episode 2/4 complete | teacher_forcing=0.293 reward=4.8825 local_hit=0.3747 paper_hit=0.4901
+2026-04-14 16:24:43,800 | INFO | novel_realworld_cache | Imitation epoch 6/8 episode 3/4 complete | teacher_forcing=0.293 reward=5.4750 local_hit=0.4257 paper_hit=0.5197
+2026-04-14 16:24:46,813 | INFO | novel_realworld_cache | Imitation epoch 6/8 episode 4/4 complete | teacher_forcing=0.293 reward=5.5162 local_hit=0.4129 paper_hit=0.5108
+2026-04-14 16:24:54,773 | INFO | novel_realworld_cache | Imitation epoch 6/8 summary | loss=2.003106 reward=5.5162 local_hit=0.4129 paper_hit=0.5108 sel_reward=257.9667 sel_local=0.4926 sel_paper=0.5440 best_score=1465.2411
+2026-04-14 16:24:58,322 | INFO | novel_realworld_cache | Imitation epoch 7/8 episode 1/4 complete | teacher_forcing=0.171 reward=8.6125 local_hit=0.5540 paper_hit=0.6577
+2026-04-14 16:25:01,564 | INFO | novel_realworld_cache | Imitation epoch 7/8 episode 2/4 complete | teacher_forcing=0.171 reward=7.4338 local_hit=0.4927 paper_hit=0.5700
+2026-04-14 16:25:04,962 | INFO | novel_realworld_cache | Imitation epoch 7/8 episode 3/4 complete | teacher_forcing=0.171 reward=7.0667 local_hit=0.4790 paper_hit=0.5388
+2026-04-14 16:25:08,174 | INFO | novel_realworld_cache | Imitation epoch 7/8 episode 4/4 complete | teacher_forcing=0.171 reward=6.6387 local_hit=0.4573 paper_hit=0.5179
+2026-04-14 16:25:15,261 | INFO | novel_realworld_cache | Imitation epoch 7/8 summary | loss=2.035471 reward=6.6387 local_hit=0.4573 paper_hit=0.5179 sel_reward=263.5000 sel_local=0.4612 sel_paper=0.5174 best_score=1465.2411
+2026-04-14 16:25:18,576 | INFO | novel_realworld_cache | Imitation epoch 8/8 episode 1/4 complete | teacher_forcing=0.050 reward=5.3075 local_hit=0.4411 paper_hit=0.5077
+2026-04-14 16:25:21,840 | INFO | novel_realworld_cache | Imitation epoch 8/8 episode 2/4 complete | teacher_forcing=0.050 reward=6.0587 local_hit=0.4435 paper_hit=0.5010
+2026-04-14 16:25:25,512 | INFO | novel_realworld_cache | Imitation epoch 8/8 episode 3/4 complete | teacher_forcing=0.050 reward=6.2108 local_hit=0.4302 paper_hit=0.5017
+2026-04-14 16:25:29,028 | INFO | novel_realworld_cache | Imitation epoch 8/8 episode 4/4 complete | teacher_forcing=0.050 reward=6.5137 local_hit=0.4622 paper_hit=0.5305
+2026-04-14 16:25:36,520 | INFO | novel_realworld_cache | Imitation epoch 8/8 summary | loss=2.040840 reward=6.5137 local_hit=0.4622 paper_hit=0.5305 sel_reward=248.2333 sel_local=0.4211 sel_paper=0.4887 best_score=1465.2411
+2026-04-14 16:25:36,521 | INFO | novel_realworld_cache | Stage 5b/5: reward fine-tuning temporal-graph policy
+2026-04-14 16:25:49,222 | INFO | novel_realworld_cache | Reinforce epoch 1/4 episode 1/4 complete | loss=1.849161 reward=232.1000 local_hit=0.3416 paper_hit=0.4352
+2026-04-14 16:26:00,126 | INFO | novel_realworld_cache | Reinforce epoch 1/4 episode 2/4 complete | loss=1.833434 reward=233.7500 local_hit=0.3901 paper_hit=0.5372
+2026-04-14 16:26:11,709 | INFO | novel_realworld_cache | Reinforce epoch 1/4 episode 3/4 complete | loss=1.775587 reward=232.8667 local_hit=0.4037 paper_hit=0.5493
+2026-04-14 16:26:23,478 | INFO | novel_realworld_cache | Reinforce epoch 1/4 episode 4/4 complete | loss=1.918142 reward=233.0250 local_hit=0.4158 paper_hit=0.5623
+2026-04-14 16:26:30,842 | INFO | novel_realworld_cache | Reinforce epoch 1/4 summary | loss=1.918142 reward=233.0250 local_hit=0.4158 paper_hit=0.5623 sel_reward=274.3000 sel_local=0.4732 sel_paper=0.5311 best_score=1627.5888
+2026-04-14 16:26:42,478 | INFO | novel_realworld_cache | Reinforce epoch 2/4 episode 1/4 complete | loss=0.456792 reward=169.5000 local_hit=0.3019 paper_hit=0.4435
+2026-04-14 16:26:54,432 | INFO | novel_realworld_cache | Reinforce epoch 2/4 episode 2/4 complete | loss=1.308479 reward=213.6000 local_hit=0.3511 paper_hit=0.4850
+2026-04-14 16:27:06,069 | INFO | novel_realworld_cache | Reinforce epoch 2/4 episode 3/4 complete | loss=0.503805 reward=201.7333 local_hit=0.3587 paper_hit=0.4983
+2026-04-14 16:27:17,811 | INFO | novel_realworld_cache | Reinforce epoch 2/4 episode 4/4 complete | loss=1.729838 reward=207.6750 local_hit=0.3791 paper_hit=0.5271
+2026-04-14 16:27:25,384 | INFO | novel_realworld_cache | Reinforce epoch 2/4 summary | loss=1.729838 reward=207.6750 local_hit=0.3791 paper_hit=0.5271 sel_reward=223.6333 sel_local=0.4347 sel_paper=0.5084 best_score=1627.5888
+2026-04-14 16:27:37,541 | INFO | novel_realworld_cache | Reinforce epoch 3/4 episode 1/4 complete | loss=-0.731089 reward=216.0000 local_hit=0.4140 paper_hit=0.5608
+2026-04-14 16:27:49,560 | INFO | novel_realworld_cache | Reinforce epoch 3/4 episode 2/4 complete | loss=0.277329 reward=209.1500 local_hit=0.3943 paper_hit=0.5716
+2026-04-14 16:28:01,682 | INFO | novel_realworld_cache | Reinforce epoch 3/4 episode 3/4 complete | loss=1.945722 reward=223.0000 local_hit=0.4145 paper_hit=0.5657
+2026-04-14 16:28:13,445 | INFO | novel_realworld_cache | Reinforce epoch 3/4 episode 4/4 complete | loss=2.158060 reward=227.3500 local_hit=0.4044 paper_hit=0.5622
+2026-04-14 16:28:20,877 | INFO | novel_realworld_cache | Reinforce epoch 3/4 summary | loss=2.158060 reward=227.3500 local_hit=0.4044 paper_hit=0.5622 sel_reward=249.1000 sel_local=0.4244 sel_paper=0.4825 best_score=1627.5888
+2026-04-14 16:28:32,828 | INFO | novel_realworld_cache | Reinforce epoch 4/4 episode 1/4 complete | loss=0.354560 reward=244.7000 local_hit=0.4164 paper_hit=0.6024
+2026-04-14 16:28:45,116 | INFO | novel_realworld_cache | Reinforce epoch 4/4 episode 2/4 complete | loss=1.387355 reward=246.4000 local_hit=0.4174 paper_hit=0.5741
+2026-04-14 16:28:57,112 | INFO | novel_realworld_cache | Reinforce epoch 4/4 episode 3/4 complete | loss=1.616128 reward=231.3333 local_hit=0.3833 paper_hit=0.5464
+2026-04-14 16:29:09,750 | INFO | novel_realworld_cache | Reinforce epoch 4/4 episode 4/4 complete | loss=2.195415 reward=225.2750 local_hit=0.3723 paper_hit=0.5474
+2026-04-14 16:29:17,755 | INFO | novel_realworld_cache | Reinforce epoch 4/4 summary | loss=2.195415 reward=225.2750 local_hit=0.3723 paper_hit=0.5474 sel_reward=301.7667 sel_local=0.5384 sel_paper=0.5965 best_score=1799.9493
+2026-04-14 16:29:18,300 | INFO | novel_realworld_cache | Evaluating random baseline
+2026-04-14 16:29:22,616 | INFO | novel_realworld_cache | Evaluating BSG-like baseline
+2026-04-14 16:29:26,668 | INFO | novel_realworld_cache | Evaluating C-epsilon-greedy baseline
+2026-04-14 16:29:30,825 | INFO | novel_realworld_cache | Evaluating cooperative teacher
+2026-04-14 16:29:36,618 | INFO | novel_realworld_cache | Evaluating learned graph policy
+2026-04-14 16:29:44,224 | INFO | novel_realworld_cache | Random: reward_mean=-310.1667 local_hit_mean=0.0047 paper_hit_mean=0.0244
+2026-04-14 16:29:44,224 | INFO | novel_realworld_cache | BSG-like: reward_mean=-2.5333 local_hit_mean=0.0066 paper_hit_mean=0.0066
+2026-04-14 16:29:44,224 | INFO | novel_realworld_cache | C-epsilon-greedy: reward_mean=49.8000 local_hit_mean=0.1820 paper_hit_mean=0.4008
+2026-04-14 16:29:44,225 | INFO | novel_realworld_cache | Teacher: reward_mean=263.7000 local_hit_mean=0.4431 paper_hit_mean=0.6362
+2026-04-14 16:29:44,225 | INFO | novel_realworld_cache | TemporalGraph: reward_mean=274.8667 local_hit_mean=0.4930 paper_hit_mean=0.5274
+Random: reward_mean=-310.1667 local_hit_mean=0.0047 paper_hit_mean=0.0244
+BSG-like: reward_mean=-2.5333 local_hit_mean=0.0066 paper_hit_mean=0.0066
+C-epsilon-greedy: reward_mean=49.8000 local_hit_mean=0.1820 paper_hit_mean=0.4008
+Teacher: reward_mean=263.7000 local_hit_mean=0.4431 paper_hit_mean=0.6362
+TemporalGraph: reward_mean=274.8667 local_hit_mean=0.4930 paper_hit_mean=0.5274
+Dataset: ml-100k
+Saved outputs under: outputs/fast_100k_runs/temporalgraph_20260414_162226/novel_realworld_main

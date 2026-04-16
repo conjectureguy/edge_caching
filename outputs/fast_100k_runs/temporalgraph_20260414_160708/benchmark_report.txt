@@ -1,0 +1,4 @@
+Related-work summary file: outputs/fast_100k_runs/temporalgraph_20260414_160708/related_work_compare/summary.csv
+Our reward_mean=295.633333 | best=TemporalGraph
+Our local_hit_mean=0.473832 | best=TemporalGraph
+Our paper_hit_mean=0.528253 | best=DTS-DDPG

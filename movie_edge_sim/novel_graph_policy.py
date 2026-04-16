@@ -103,8 +103,8 @@ class ImitationConfig:
     teacher_guidance_weight: float = 0.55
     placement_interval: int = 3
     checkpoint_reward_weight: float = 1.0
-    checkpoint_local_hit_weight: float = 800.0
-    checkpoint_paper_hit_weight: float = 1800.0
+    checkpoint_local_hit_weight: float = 600.0
+    checkpoint_paper_hit_weight: float = 2500.0
     checkpoint_eval_episodes: int = 4
 
 
@@ -127,10 +127,10 @@ class ReinforceConfig:
     decode_diversity_penalty: float = 0.25
     teacher_guidance_weight: float = 0.55
     placement_interval: int = 3
-    edge_hit_bonus_weight: float = 1400.0
+    edge_hit_bonus_weight: float = 2500.0
     checkpoint_reward_weight: float = 1.0
-    checkpoint_local_hit_weight: float = 900.0
-    checkpoint_paper_hit_weight: float = 2200.0
+    checkpoint_local_hit_weight: float = 600.0
+    checkpoint_paper_hit_weight: float = 3000.0
     checkpoint_eval_episodes: int = 4
 
 
@@ -236,22 +236,31 @@ def _ranked_slots_to_items(env, b: int, ranked_slots: np.ndarray) -> list[int]:
 
 
 def _action_proxy_value(env, b: int, items: list[int], planned: list[set[int]]) -> float:
+    """Evaluate a candidate cache set by its cooperative utility (local + edge coverage)."""
     neigh = np.where(env.current_adjacency[b] > 0.0)[0]
     neigh = neigh[neigh != b]
     item_to_slot = {int(env.current_candidates[b, slot]): int(slot) for slot in np.where(env.current_mask[b])[0].tolist()}
     total = 0.0
     for item in items:
         slot = item_to_slot.get(int(item))
-        if slot is None:
-            continue
-        overlap = sum(int(item) in planned[int(n)] for n in neigh)
-        total += 1.65 * float(env.current_candidate_scores[b, slot])
-        total += 0.30 * float(env.global_popularity[int(item)])
-        total += 0.22 * float(int(item) in env.cache_items[b])
-        total += 0.28 * float(env.current_neighbor_shortage[b, slot])
-        total += 0.18 * float(env.current_semantic_affinity[b, slot])
-        total += 0.14 * float(env.current_freshness_relevance[b, slot])
-        total -= 0.06 * float(overlap)
+        local_demand = float(env.current_candidate_scores[b, slot]) if slot is not None else 0.0
+        # Neighbor demand: only count neighbors that haven't already planned this item
+        n_demand = 0.0
+        n_covered = 0
+        for n in neigh:
+            if int(item) in planned[int(n)]:
+                n_covered += 1
+                continue
+            n_slot = np.where(env.current_candidates[int(n)] == item)[0]
+            if n_slot.size > 0:
+                n_demand += float(env.current_candidate_scores[int(n), n_slot[0]])
+        overlap_frac = n_covered / max(1, len(neigh))
+        total += 1.0 * local_demand  # local hit value
+        total += 0.6 * float(env.current_neighbor_shortage[b, slot]) if slot is not None else 0.0
+        total += 0.3 * float(env.current_neighbor_support[b, slot]) if slot is not None else 0.0
+        total += 0.25 * float(env.global_popularity[int(item)])
+        total += 0.10 * float(int(item) in env.cache_items[b])  # inertia
+        total -= 0.80 * overlap_frac  # strongly penalize redundancy
     return total
 
 
@@ -262,89 +271,99 @@ def logits_to_cache_items(
     teacher_scores: np.ndarray | None = None,
     teacher_guidance_weight: float = 0.0,
 ) -> np.ndarray:
+    """Decode GNN logits into cooperative cache item selections.
+
+    Scoring per candidate slot:
+      utility = w_gnn * gnn_norm
+              + w_local * local_norm           (drives local hit)
+              + w_edge * avg_neighbor_demand    (drives edge hit)
+              + w_teacher * teacher_norm
+              + w_pop * global_popularity
+              + w_inertia * in_cache
+              - w_overlap * neighbor_overlap    (prevents redundant caching)
+    All terms normalized to [0, 1] to avoid scale imbalance.
+    """
     slot_scores = logits.detach().cpu().numpy().astype(np.float64)
     out = np.zeros((env.cfg.n_sbs, env.cfg.cache_capacity), dtype=np.int64)
     planned: list[set[int]] = [set() for _ in range(env.cfg.n_sbs)]
     order = np.argsort(slot_scores.max(axis=1) + 0.5 * env.current_future_load)[::-1]
+
     for b in order.tolist():
-        chosen = []
-        seen: set[int] = set()
-        adjusted = slot_scores[b].copy()
         valid_slots = np.where(env.current_mask[b])[0].tolist()
-        logit_scale = 1.0
-        if valid_slots:
-            mask_scores = adjusted[np.asarray(valid_slots, dtype=np.int64)]
-            if len(mask_scores) > 1:
-                logit_scale = max(float(np.std(mask_scores)), 1.0)
-        max_local_score = max([float(env.current_candidate_scores[b, s]) for s in valid_slots], default=1e-6)
-        local_norm = np.zeros((env.cfg.fp,), dtype=np.float64)
-        if valid_slots:
-            raw = np.maximum(env.current_candidate_scores[b, valid_slots], 0.0)
-            denom = max(float(raw.sum()), 1e-8)
-            local_norm[np.asarray(valid_slots, dtype=np.int64)] = raw / denom
-        local_prior = _normalized_local_scores(env, b, valid_slots)
-        teacher_norm = _normalized_teacher_scores(teacher_scores, b, valid_slots, env.cfg.fp)
-        adjusted += 0.70 * local_prior
-        if teacher_guidance_weight > 0.0:
-            adjusted += teacher_guidance_weight * teacher_norm
-        if diversity_penalty > 0.0:
-            neigh = np.where(env.current_adjacency[b] > 0.0)[0]
-            neigh = neigh[neigh != b]
-            for slot in valid_slots:
-                item = int(env.current_candidates[b, int(slot)])
-                overlap = sum(item in planned[int(n)] for n in neigh)
-                local_score = float(env.current_candidate_scores[b, int(slot)])
-                normalized_local = local_score / max(max_local_score, 1e-6)
-                local_protection = min(1.0, max(0.0, (normalized_local - 0.75) / 0.25)) if normalized_local > 0.75 else 0.0
-                
-                teacher_keep = max(0.0, float(teacher_norm[slot]))
-                adjusted[slot] -= diversity_penalty * float(overlap) * logit_scale * (1.0 - local_protection)
-                adjusted[slot] += 0.14 * float(item in env.cache_items[b])
-                adjusted[slot] += 1.15 * float(env.current_neighbor_shortage[b, int(slot)])
-                adjusted[slot] += 0.42 * float(local_norm[slot])
-                adjusted[slot] += 0.04 * float(env.global_popularity[item])
-                adjusted[slot] += 0.08 * float(item == int(env.current_trend_items[b])) * float(env.current_trend_strength[b])
-                adjusted[slot] += 0.22 * float(env.current_neighbor_support[b, int(slot)])
-                adjusted[slot] += 0.07 * float(env.current_future_load[b]) * float(local_norm[slot])
-                adjusted[slot] += 0.18 * float(env.current_semantic_affinity[b, int(slot)])
-                adjusted[slot] += 0.12 * float(env.current_freshness_relevance[b, int(slot)])
-                adjusted[slot] += 0.10 * teacher_keep
-        ranked = np.argsort(adjusted)[::-1]
+        if not valid_slots:
+            out[b] = np.zeros(env.cfg.cache_capacity, dtype=np.int64)
+            continue
+
+        neigh = np.where(env.current_adjacency[b] > 0.0)[0]
+        neigh = neigh[neigh != b]
+        n_neigh = max(1, len(neigh))
+        valid_arr = np.asarray(valid_slots, dtype=np.int64)
+
+        # --- Normalize GNN logits to [0, 1] ---
+        valid_logits = slot_scores[b, valid_arr]
+        logit_min = float(np.min(valid_logits))
+        logit_range = max(float(np.max(valid_logits) - logit_min), 1e-6)
+        gnn_norm = np.zeros(env.cfg.fp, dtype=np.float64)
+        gnn_norm[valid_arr] = (valid_logits - logit_min) / logit_range
+
+        # --- Normalize local demand to [0, 1] ---
+        local_raw = np.maximum(env.current_candidate_scores[b], 0.0).astype(np.float64)
+        local_max = max(float(np.max(local_raw[valid_arr])), 1e-6)
+        local_norm = np.zeros(env.cfg.fp, dtype=np.float64)
+        local_norm[valid_arr] = local_raw[valid_arr] / local_max
+
+        # --- Normalize teacher scores to [0, 1] ---
+        teacher_norm = np.zeros(env.cfg.fp, dtype=np.float64)
+        if teacher_scores is not None and valid_slots:
+            t_raw = teacher_scores[b, valid_arr].astype(np.float64)
+            t_min = float(np.min(t_raw))
+            t_range = max(float(np.max(t_raw) - t_min), 1e-6)
+            teacher_norm[valid_arr] = (t_raw - t_min) / t_range
+
+        # --- Compute utility for each slot ---
+        utility = np.full(env.cfg.fp, -1e9, dtype=np.float64)
+        for slot in valid_slots:
+            item = int(env.current_candidates[b, slot])
+
+            # Neighbor overlap: fraction of neighbors already caching this (existing caches + plans)
+            n_overlap = 0
+            for n in neigh.tolist():
+                n_int = int(n)
+                if item in env.cache_items[n_int] or item in planned[n_int]:
+                    n_overlap += 1
+            overlap_frac = n_overlap / n_neigh
+            in_cache = float(item in env.cache_items[b])
+
+            # neighbor_shortage already captures: demand from neighbors * (1 - overlap)
+            # It's precomputed in _build_candidate_features as:
+            # shortage = neighbor_support * max(0, 1 - neighbor_overlap)
+            shortage_norm = float(env.current_neighbor_shortage[b, slot]) / local_max
+            support_norm = float(env.current_neighbor_support[b, slot]) / local_max
+
+            utility[slot] = (
+                0.30 * gnn_norm[slot]             # GNN learned preferences
+                + 1.40 * local_norm[slot]          # local demand (primary driver of local hit)
+                + 0.60 * shortage_norm             # unsatisfied neighbor demand (drives edge hit)
+                + 0.30 * support_norm              # total neighbor interest
+                + teacher_guidance_weight * 0.5 * teacher_norm[slot]
+                + 0.25 * float(env.global_popularity[item])
+                + 0.15 * in_cache
+                - diversity_penalty * overlap_frac * 1.5  # avoid redundancy
+            )
+
+        # Select top items by utility
+        ranked = np.argsort(utility)[::-1]
         chosen = _ranked_slots_to_items(env, b, ranked)
 
-        local_fallback_scores = np.full((env.cfg.fp,), -1e9, dtype=np.float64)
-        if valid_slots:
-            local_fallback_scores[np.asarray(valid_slots, dtype=np.int64)] = (
-                1.20 * local_prior[np.asarray(valid_slots, dtype=np.int64)]
-                + 0.30 * teacher_norm[np.asarray(valid_slots, dtype=np.int64)]
-                + 0.28 * env.current_candidate_scores[b, np.asarray(valid_slots, dtype=np.int64)]
-                + 0.18 * env.current_neighbor_shortage[b, np.asarray(valid_slots, dtype=np.int64)]
-                + 0.10 * env.current_semantic_affinity[b, np.asarray(valid_slots, dtype=np.int64)]
-                + 0.08 * env.current_freshness_relevance[b, np.asarray(valid_slots, dtype=np.int64)]
-                + 0.06 * env.current_neighbor_support[b, np.asarray(valid_slots, dtype=np.int64)]
-            )
-        local_fallback = _ranked_slots_to_items(env, b, np.argsort(local_fallback_scores)[::-1])
-
-        ddpg_fallback_scores = np.full((env.cfg.fp,), -1e9, dtype=np.float64)
-        for slot in valid_slots:
-            item = int(env.current_candidates[b, int(slot)])
-            neigh = np.where(env.current_adjacency[b] > 0.0)[0]
-            neigh = neigh[neigh != b]
-            neighbor_overlap = float(sum(item in env.cache_items[int(n)] for n in neigh) / max(1, len(neigh)))
-            ddpg_fallback_scores[int(slot)] = (
-                0.20 * float(env.global_popularity[item])
-                + 0.05 * float(item in env.cache_items[b])
-                - 0.15 * neighbor_overlap
-            )
-        ddpg_fallback = _ranked_slots_to_items(env, b, np.argsort(ddpg_fallback_scores)[::-1])
-
-        candidates = [chosen, local_fallback, ddpg_fallback]
+        # Teacher fallback comparison
         if teacher_scores is not None:
-            teacher_fallback = _ranked_slots_to_items(env, b, np.argsort(teacher_norm)[::-1])
-            candidates.append(teacher_fallback)
+            teacher_chosen = _ranked_slots_to_items(env, b, np.argsort(teacher_norm)[::-1])
+            v_chosen = _action_proxy_value(env, b, chosen, planned)
+            v_teacher = _action_proxy_value(env, b, teacher_chosen, planned)
+            if v_teacher > v_chosen:
+                chosen = teacher_chosen
 
-        best_items = max(candidates, key=lambda items: _action_proxy_value(env, b, items, planned))
-        out[b] = np.asarray(best_items, dtype=np.int64)
+        out[b] = np.asarray(chosen, dtype=np.int64)
         planned[b] = set(out[b].tolist())
     return out
 
@@ -356,6 +375,7 @@ def sample_cache_items(
     teacher_scores: np.ndarray | None = None,
     teacher_guidance_weight: float = 0.0,
 ) -> tuple[np.ndarray, torch.Tensor, torch.Tensor]:
+    """Sample cache items during training with cooperative utility biases on GNN logits."""
     device = logits.device
     out = np.zeros((env.cfg.n_sbs, env.cfg.cache_capacity), dtype=np.int64)
     total_log_prob = torch.zeros((), dtype=torch.float32, device=device)
@@ -366,42 +386,53 @@ def sample_cache_items(
     for b in order.tolist():
         scores = logits[b].clone()
         valid_slots = np.where(env.current_mask[b])[0].tolist()
-        logit_scale = 1.0
-        if valid_slots:
-            mask_scores = scores[torch.as_tensor(valid_slots, dtype=torch.long, device=device)]
-            if len(mask_scores) > 1:
-                logit_scale = float(torch.clamp(mask_scores.std(unbiased=False), min=1.0).item())
-        max_local_score = max([float(env.current_candidate_scores[b, s]) for s in valid_slots], default=1e-6)
+        if not valid_slots:
+            continue
+
         neigh = np.where(env.current_adjacency[b] > 0.0)[0]
         neigh = neigh[neigh != b]
-        local_norm = np.zeros((env.cfg.fp,), dtype=np.float64)
-        if valid_slots:
-            raw = np.maximum(env.current_candidate_scores[b, valid_slots], 0.0)
-            denom = max(float(raw.sum()), 1e-8)
-            local_norm[np.asarray(valid_slots, dtype=np.int64)] = raw / denom
-        local_prior = _normalized_local_scores(env, b, valid_slots)
-        teacher_norm = _normalized_teacher_scores(teacher_scores, b, valid_slots, env.cfg.fp)
+        n_neigh = max(1, len(neigh))
+
+        # Normalize local demand to [0, 1]
+        local_raw = np.maximum(env.current_candidate_scores[b], 0.0).astype(np.float64)
+        valid_arr = np.asarray(valid_slots, dtype=np.int64)
+        local_max = max(float(np.max(local_raw[valid_arr])), 1e-6)
+        local_norm = np.zeros(env.cfg.fp, dtype=np.float64)
+        local_norm[valid_arr] = local_raw[valid_arr] / local_max
+
+        # Teacher scores normalized to [0, 1]
+        teacher_norm = np.zeros(env.cfg.fp, dtype=np.float64)
+        if teacher_scores is not None and valid_slots:
+            t_raw = teacher_scores[b, valid_arr].astype(np.float64)
+            t_min = float(np.min(t_raw))
+            t_range = max(float(np.max(t_raw) - t_min), 1e-6)
+            teacher_norm[valid_arr] = (t_raw - t_min) / t_range
+
+        # Add cooperative utility biases to GNN logits
         for slot in valid_slots:
             item = int(env.current_candidates[b, slot])
-            overlap = sum(item in planned[int(n)] for n in neigh)
-            teacher_keep = max(0.0, float(teacher_norm[slot]))
-            local_score = float(env.current_candidate_scores[b, int(slot)])
-            normalized_local = local_score / max(max_local_score, 1e-6)
-            local_protection = min(1.0, max(0.0, (normalized_local - 0.75) / 0.25)) if normalized_local > 0.75 else 0.0
-            
-            scores[slot] = scores[slot] + 0.70 * float(local_prior[slot])
-            scores[slot] = scores[slot] + teacher_guidance_weight * float(teacher_norm[slot])
-            scores[slot] = scores[slot] - diversity_penalty * float(overlap) * logit_scale * (1.0 - local_protection)
-            scores[slot] = scores[slot] + 0.14 * float(item in env.cache_items[b])
-            scores[slot] = scores[slot] + 1.15 * float(env.current_neighbor_shortage[b, slot])
-            scores[slot] = scores[slot] + 0.42 * float(local_norm[slot])
-            scores[slot] = scores[slot] + 0.04 * float(env.global_popularity[item])
-            scores[slot] = scores[slot] + 0.08 * float(item == int(env.current_trend_items[b])) * float(env.current_trend_strength[b])
-            scores[slot] = scores[slot] + 0.22 * float(env.current_neighbor_support[b, slot])
-            scores[slot] = scores[slot] + 0.07 * float(env.current_future_load[b]) * float(local_norm[slot])
-            scores[slot] = scores[slot] + 0.18 * float(env.current_semantic_affinity[b, slot])
-            scores[slot] = scores[slot] + 0.12 * float(env.current_freshness_relevance[b, slot])
-            scores[slot] = scores[slot] + 0.10 * teacher_keep
+
+            # Use precomputed neighbor shortage/support
+            shortage_norm = float(env.current_neighbor_shortage[b, slot]) / local_max
+            support_norm = float(env.current_neighbor_support[b, slot]) / local_max
+            n_overlap = 0
+            for n in neigh.tolist():
+                if item in env.cache_items[int(n)] or item in planned[int(n)]:
+                    n_overlap += 1
+            overlap_frac = n_overlap / n_neigh
+            in_cache = float(item in env.cache_items[b])
+
+            # Bias GNN logits with cooperative signals (moderate to preserve gradients)
+            bias = (
+                0.80 * local_norm[slot]
+                + 0.45 * shortage_norm
+                + 0.20 * support_norm
+                + teacher_guidance_weight * 0.4 * teacher_norm[slot]
+                + 0.10 * in_cache
+                + 0.12 * float(env.global_popularity[item])
+                - diversity_penalty * overlap_frac * 1.2
+            )
+            scores[slot] = scores[slot] + bias
 
         used_slots: set[int] = set()
         chosen: list[int] = []
@@ -680,7 +711,8 @@ def fine_tune_graph_cache_policy_reinforce(
                 last_action = chosen_items.copy()
                 obs, reward, done, info = env.step_full_cache_items(chosen_items)
                 paper_hit = float(info["local_hit_rate"] + info["neighbor_fetch_rate"])
-                shaped_reward = float(reward) + cfg.edge_hit_bonus_weight * paper_hit
+                cloud_fetch = float(info["cloud_fetch_rate"])
+                shaped_reward = float(reward) + cfg.edge_hit_bonus_weight * paper_hit - 0.5 * cfg.edge_hit_bonus_weight * cloud_fetch
                 log_probs.append(log_prob)
                 entropies.append(entropy)
                 rewards_per_step.append(shaped_reward)

@@ -1,0 +1,6 @@
+Related-work summary file: outputs/research_benchmark_runs/temporalgraph_20260415_041120/related_work_compare/summary.csv
+Our reward_mean=2507.010000 | best=TemporalGraph
+Our local_hit_mean=0.311733 | best=TemporalGraph
+Our paper_hit_mean=0.481714 | best=DTS-DDPG
+Our cloud_fetch_mean=0.517453 | best=DTS-DDPG
+Ours best on all four summary metrics: no

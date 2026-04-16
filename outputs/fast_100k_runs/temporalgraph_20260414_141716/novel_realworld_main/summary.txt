@@ -1,0 +1,5 @@
+Random: reward_mean=-154.7333 local_hit_mean=0.0104 paper_hit_mean=0.0292
+BSG-like: reward_mean=1.3667 local_hit_mean=0.0063 paper_hit_mean=0.0063
+C-epsilon-greedy: reward_mean=108.9333 local_hit_mean=0.2308 paper_hit_mean=0.3942
+Teacher: reward_mean=254.0000 local_hit_mean=0.4328 paper_hit_mean=0.5144
+TemporalGraph: reward_mean=264.6000 local_hit_mean=0.4418 paper_hit_mean=0.5170

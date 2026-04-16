@@ -85,8 +85,8 @@ echo "[1/9] Training Temporal Encoder + Elastic FL + GNN policy"
   --teacher-score-loss-weight 0.60 \
   --teacher-rank-loss-weight 0.25 \
   --label-smoothing 0.03 \
-  --decode-diversity-penalty 0.18 \
-  --teacher-guidance-weight 0.70 \
+  --decode-diversity-penalty 0.35 \
+  --teacher-guidance-weight 1.50 \
   --placement-interval 3 \
   --teacher-base-weight 0.42 \
   --teacher-attention-weight 0.24 \
@@ -119,8 +119,8 @@ echo "[2/9] Running related-work benchmark"
   --fp 50 \
   --grid-size 300 \
   --policy-hidden-dim 160 \
-  --decode-diversity-penalty 0.18 \
-  --teacher-guidance-weight 0.70 \
+  --decode-diversity-penalty 0.35 \
+  --teacher-guidance-weight 1.50 \
   --placement-interval 3 \
   --log-level INFO \
   --log-every-episode 1 \

@@ -1,0 +1,8 @@
+Run dir: /home/rahul/Desktop/edge_caching/outputs/research_benchmark_runs/temporalgraph_20260415_041120_filtered_no_awfdrl/novel_realworld_main
+Dataset: ml-1m
+Evaluation episodes: 10
+Random: reward_mean=-1845.1600 local_hit_mean=0.0054 paper_hit_mean=0.0199 cloud_fetch_mean=0.9793
+BSG-like: reward_mean=118.6300 local_hit_mean=0.0188 paper_hit_mean=0.0188 cloud_fetch_mean=0.9804
+C-epsilon-greedy: reward_mean=1956.7400 local_hit_mean=0.3015 paper_hit_mean=0.4111 cloud_fetch_mean=0.5889
+MAAFDRL: reward_mean=1609.7400 local_hit_mean=0.2253 paper_hit_mean=0.3846 cloud_fetch_mean=0.6154
+TemporalGraph: reward_mean=2512.6500 local_hit_mean=0.3126 paper_hit_mean=0.4821 cloud_fetch_mean=0.5170
