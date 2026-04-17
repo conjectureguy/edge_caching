@@ -151,15 +151,21 @@ class ThompsonPolicy(BasePolicy):
 
     def update(self, env: PaperCEFMRCooperativeEnv, items: np.ndarray, obs: dict[str, np.ndarray]) -> None:
         assert self.alpha is not None and self.beta is not None
+        demand_by_sbs: list[dict[int, int]] = [dict() for _ in range(env.cfg.n_sbs)]
         for ue in range(env.cfg.n_ues):
             b = int(obs["association"][ue])
             user_id = int(env.user_ids_for_ues[ue])
             ptr = int(env.user_ptrs[ue])
             item = int(env.user_histories[user_id][ptr])
-            self.alpha[b, item] += 1.0
+            demand_by_sbs[b][item] = demand_by_sbs[b].get(item, 0) + 1
+        for b in range(env.cfg.n_sbs):
             for cached in items[b]:
                 cached = int(cached)
-                if cached != item:
+                if cached <= 0:
+                    continue
+                if demand_by_sbs[b].get(cached, 0) > 0:
+                    self.alpha[b, cached] += 1.0
+                else:
                     self.beta[b, cached] += 1.0
 
 

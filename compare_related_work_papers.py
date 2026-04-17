@@ -32,6 +32,16 @@ from movie_edge_sim.temporal_realworld import (
 )
 
 
+SCHEME_ORDER = ["TemporalGraph", "MAAFDRL", "Thompson", "LFU", "LRU"]
+SCHEME_COLORS = {
+    "TemporalGraph": "#d62828",
+    "MAAFDRL": "#2a9d8f",
+    "Thompson": "#7b2cbf",
+    "LFU": "#4d908e",
+    "LRU": "#577590",
+}
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description=(
@@ -289,6 +299,153 @@ class MobilityAwareAsyncFDRLPolicy(BasePolicy):
             self.async_popularity[b, item] += 1.0
 
 
+class LRUPolicy(BasePolicy):
+    name = "LRU"
+
+    def __init__(self) -> None:
+        self.last_seen: np.ndarray | None = None
+        self._tick = 0
+
+    def reset(self, env: NovelRealWorldCachingEnv) -> None:
+        self.last_seen = np.zeros((env.cfg.n_sbs, env.num_items + 1), dtype=np.float64)
+        self._tick = 0
+
+    def select_items(self, obs: dict[str, np.ndarray], env: NovelRealWorldCachingEnv) -> np.ndarray:
+        assert self.last_seen is not None
+        out = np.zeros((env.cfg.n_sbs, env.cfg.cache_capacity), dtype=np.int64)
+        fallback = (np.argsort(env.global_popularity[1:])[-env.cfg.cache_capacity :][::-1] + 1).tolist()
+        for b in range(env.cfg.n_sbs):
+            scores = self.last_seen[b, 1:]
+            ranked = (np.argsort(scores)[::-1] + 1).tolist()
+            chosen: list[int] = []
+            seen: set[int] = set()
+            for item in ranked:
+                item = int(item)
+                if scores[item - 1] <= 0.0:
+                    continue
+                if item not in seen:
+                    chosen.append(item)
+                    seen.add(item)
+                if len(chosen) >= env.cfg.cache_capacity:
+                    break
+            for item in fallback:
+                item = int(item)
+                if item not in seen:
+                    chosen.append(item)
+                    seen.add(item)
+                if len(chosen) >= env.cfg.cache_capacity:
+                    break
+            out[b] = np.asarray(chosen[: env.cfg.cache_capacity], dtype=np.int64)
+        return out
+
+    def update(self, env: NovelRealWorldCachingEnv, obs: dict[str, np.ndarray], chosen: np.ndarray, info: dict[str, float]) -> None:
+        assert self.last_seen is not None
+        association = obs["association"]
+        for ue in range(env.cfg.n_ues):
+            if not env.last_active_mask[ue]:
+                continue
+            item = int(env.last_requests[ue])
+            if item <= 0:
+                continue
+            self._tick += 1
+            self.last_seen[int(association[ue]), item] = float(self._tick)
+
+
+class LFUPolicy(BasePolicy):
+    name = "LFU"
+
+    def __init__(self) -> None:
+        self.counts: np.ndarray | None = None
+
+    def reset(self, env: NovelRealWorldCachingEnv) -> None:
+        self.counts = np.zeros((env.cfg.n_sbs, env.num_items + 1), dtype=np.float64)
+
+    def select_items(self, obs: dict[str, np.ndarray], env: NovelRealWorldCachingEnv) -> np.ndarray:
+        assert self.counts is not None
+        out = np.zeros((env.cfg.n_sbs, env.cfg.cache_capacity), dtype=np.int64)
+        fallback = (np.argsort(env.global_popularity[1:])[-env.cfg.cache_capacity :][::-1] + 1).tolist()
+        for b in range(env.cfg.n_sbs):
+            scores = self.counts[b, 1:]
+            ranked = (np.argsort(scores)[::-1] + 1).tolist()
+            chosen: list[int] = []
+            seen: set[int] = set()
+            for item in ranked:
+                item = int(item)
+                if scores[item - 1] <= 0.0:
+                    continue
+                if item not in seen:
+                    chosen.append(item)
+                    seen.add(item)
+                if len(chosen) >= env.cfg.cache_capacity:
+                    break
+            for item in fallback:
+                item = int(item)
+                if item not in seen:
+                    chosen.append(item)
+                    seen.add(item)
+                if len(chosen) >= env.cfg.cache_capacity:
+                    break
+            out[b] = np.asarray(chosen[: env.cfg.cache_capacity], dtype=np.int64)
+        return out
+
+    def update(self, env: NovelRealWorldCachingEnv, obs: dict[str, np.ndarray], chosen: np.ndarray, info: dict[str, float]) -> None:
+        assert self.counts is not None
+        association = obs["association"]
+        for ue in range(env.cfg.n_ues):
+            if not env.last_active_mask[ue]:
+                continue
+            item = int(env.last_requests[ue])
+            if item <= 0:
+                continue
+            self.counts[int(association[ue]), item] += 1.0
+
+
+class ThompsonPolicy(BasePolicy):
+    name = "Thompson"
+
+    def __init__(self, seed: int = 42) -> None:
+        self.rng = np.random.default_rng(seed)
+        self.alpha: np.ndarray | None = None
+        self.beta: np.ndarray | None = None
+
+    def reset(self, env: NovelRealWorldCachingEnv) -> None:
+        self.alpha = np.ones((env.cfg.n_sbs, env.num_items + 1), dtype=np.float64)
+        self.beta = np.ones((env.cfg.n_sbs, env.num_items + 1), dtype=np.float64)
+
+    def select_items(self, obs: dict[str, np.ndarray], env: NovelRealWorldCachingEnv) -> np.ndarray:
+        assert self.alpha is not None and self.beta is not None
+        out = np.zeros((env.cfg.n_sbs, env.cfg.cache_capacity), dtype=np.int64)
+        candidates = np.arange(1, env.num_items + 1, dtype=np.int64)
+        for b in range(env.cfg.n_sbs):
+            sampled = self.rng.beta(self.alpha[b, candidates], self.beta[b, candidates])
+            best = candidates[np.argsort(sampled)[-env.cfg.cache_capacity :][::-1]]
+            out[b] = best.astype(np.int64)
+        return out
+
+    def update(self, env: NovelRealWorldCachingEnv, obs: dict[str, np.ndarray], chosen: np.ndarray, info: dict[str, float]) -> None:
+        assert self.alpha is not None and self.beta is not None
+        association = obs["association"]
+        demand_by_sbs: list[dict[int, int]] = [dict() for _ in range(env.cfg.n_sbs)]
+        for ue in range(env.cfg.n_ues):
+            if not env.last_active_mask[ue]:
+                continue
+            item = int(env.last_requests[ue])
+            if item <= 0:
+                continue
+            b = int(association[ue])
+            demand_by_sbs[b][item] = demand_by_sbs[b].get(item, 0) + 1
+        for b in range(env.cfg.n_sbs):
+            for item in chosen[b]:
+                item = int(item)
+                if item <= 0:
+                    continue
+                # Treat each cached item as one Bernoulli exposure per step.
+                if demand_by_sbs[b].get(item, 0) > 0:
+                    self.alpha[b, item] += 1.0
+                else:
+                    self.beta[b, item] += 1.0
+
+
 class CooperativeDDPGPolicy(BasePolicy):
     name = "DTS-DDPG"
 
@@ -516,16 +673,17 @@ def save_outputs(
 
 
 def _bar_plot(results: list[EvalSummary], metric: str, title: str, ylabel: str, out_path: Path) -> None:
-    schemes = [r.scheme for r in results]
+    ordered_results = sorted(results, key=lambda r: SCHEME_ORDER.index(r.scheme) if r.scheme in SCHEME_ORDER else len(SCHEME_ORDER))
+    schemes = [r.scheme for r in ordered_results]
     values = [getattr(r, metric) for r in results]
     fig, ax = plt.subplots(figsize=(9, 5))
-    bars = ax.bar(schemes, values, color=["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"])
+    bars = ax.bar(schemes, [getattr(r, metric) for r in ordered_results], color=[SCHEME_COLORS.get(name, "#6c757d") for name in schemes])
     ax.set_title(title)
     ax.set_ylabel(ylabel)
     ax.grid(axis="y", alpha=0.25, linestyle="--")
     ax.set_axisbelow(True)
     ax.tick_params(axis="x", rotation=12)
-    for bar, value in zip(bars, values):
+    for bar, value in zip(bars, [getattr(r, metric) for r in ordered_results]):
         ax.text(bar.get_x() + bar.get_width() / 2.0, value, f"{value:.3f}", ha="center", va="bottom", fontsize=8)
     fig.tight_layout()
     fig.savefig(out_path, dpi=180)
@@ -534,7 +692,10 @@ def _bar_plot(results: list[EvalSummary], metric: str, title: str, ylabel: str, 
 
 def _episode_plot(rows: list[dict[str, float | str]], metric: str, title: str, ylabel: str, out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(9, 5))
-    schemes = sorted({str(r["scheme"]) for r in rows})
+    schemes = sorted(
+        {str(r["scheme"]) for r in rows},
+        key=lambda name: SCHEME_ORDER.index(name) if name in SCHEME_ORDER else len(SCHEME_ORDER),
+    )
     for scheme in schemes:
         rr = sorted([r for r in rows if str(r["scheme"]) == scheme], key=lambda x: int(x["episode"]))
         ax.plot(
@@ -542,6 +703,7 @@ def _episode_plot(rows: list[dict[str, float | str]], metric: str, title: str, y
             [float(r[metric]) for r in rr],
             marker="o",
             linewidth=2,
+            color=SCHEME_COLORS.get(scheme, "#6c757d"),
             label=scheme,
         )
     ax.set_title(title)
@@ -678,9 +840,9 @@ def main() -> None:
             teacher_guidance_weight=args.teacher_guidance_weight,
             placement_interval=args.placement_interval,
         )
-    logger.info("Evaluating AWFDRL baseline")
-    awfdrl_rows = evaluate_policy(
-        AttentionWeightedFDRLPolicy(),
+    logger.info("Evaluating MAAFDRL baseline")
+    maafdrl_rows = evaluate_policy(
+        MobilityAwareAsyncFDRLPolicy(),
         env,
         episodes=args.eval_episodes,
         seed=args.seed + 4000,
@@ -688,9 +850,9 @@ def main() -> None:
         log_every_episode=args.log_every_episode,
         placement_interval=args.placement_interval,
     )
-    logger.info("Evaluating MAAFDRL baseline")
-    maafdrl_rows = evaluate_policy(
-        MobilityAwareAsyncFDRLPolicy(),
+    logger.info("Evaluating Thompson baseline")
+    thompson_rows = evaluate_policy(
+        ThompsonPolicy(seed=args.seed + 5000),
         env,
         episodes=args.eval_episodes,
         seed=args.seed + 5000,
@@ -698,30 +860,42 @@ def main() -> None:
         log_every_episode=args.log_every_episode,
         placement_interval=args.placement_interval,
     )
-    logger.info("Evaluating DTS-DDPG baseline")
-    ddpg_rows = evaluate_policy(
-        CooperativeDDPGPolicy(placement_interval=args.placement_interval),
+    logger.info("Evaluating LFU baseline")
+    lfu_rows = evaluate_policy(
+        LFUPolicy(),
         env,
         episodes=args.eval_episodes,
         seed=args.seed + 6000,
         logger=logger,
         log_every_episode=args.log_every_episode,
-        placement_interval=1,
+        placement_interval=args.placement_interval,
+    )
+    logger.info("Evaluating LRU baseline")
+    lru_rows = evaluate_policy(
+        LRUPolicy(),
+        env,
+        episodes=args.eval_episodes,
+        seed=args.seed + 7000,
+        logger=logger,
+        log_every_episode=args.log_every_episode,
+        placement_interval=args.placement_interval,
     )
 
     results = [
         summarize("TemporalGraph", our_rows),
-        summarize("AWFDRL", awfdrl_rows),
         summarize("MAAFDRL", maafdrl_rows),
-        summarize("DTS-DDPG", ddpg_rows),
+        summarize("Thompson", thompson_rows),
+        summarize("LFU", lfu_rows),
+        summarize("LRU", lru_rows),
     ]
 
     episode_rows: list[dict[str, float | str]] = []
     for scheme, rows in [
         ("TemporalGraph", our_rows),
-        ("AWFDRL", awfdrl_rows),
         ("MAAFDRL", maafdrl_rows),
-        ("DTS-DDPG", ddpg_rows),
+        ("Thompson", thompson_rows),
+        ("LFU", lfu_rows),
+        ("LRU", lru_rows),
     ]:
         for row in rows:
             episode_rows.append({"scheme": scheme, **row})

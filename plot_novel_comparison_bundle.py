@@ -4,6 +4,7 @@ import argparse
 import csv
 from dataclasses import dataclass
 from pathlib import Path
+import re
 from types import MethodType
 
 import matplotlib
@@ -14,8 +15,10 @@ import numpy as np
 import torch
 
 from compare_related_work_papers import (
-    AttentionWeightedFDRLPolicy,
+    LFUPolicy,
+    LRUPolicy,
     MobilityAwareAsyncFDRLPolicy,
+    ThompsonPolicy,
     _adapt_candidate_features,
     _adapt_node_features,
 )
@@ -47,6 +50,9 @@ class BundleConfig:
     sbs_list: list[int]
     seed: int
     decode_diversity_penalty: float
+    c_epsilon: float
+    include_models: list[str]
+    exclude_models: list[str]
 
 
 def parse_args() -> BundleConfig:
@@ -66,6 +72,9 @@ def parse_args() -> BundleConfig:
     p.add_argument("--sbs-list", type=int, nargs="+", default=[8, 12, 16])
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--decode-diversity-penalty", type=float, default=0.35)
+    p.add_argument("--c-epsilon", type=float, default=0.18)
+    p.add_argument("--include-models", nargs="*", default=[])
+    p.add_argument("--exclude-models", nargs="*", default=[])
     args = p.parse_args()
     return BundleConfig(
         run_dir=args.run_dir,
@@ -83,7 +92,25 @@ def parse_args() -> BundleConfig:
         sbs_list=args.sbs_list,
         seed=args.seed,
         decode_diversity_penalty=args.decode_diversity_penalty,
+        c_epsilon=args.c_epsilon,
+        include_models=args.include_models,
+        exclude_models=args.exclude_models,
     )
+
+
+def _normalize_model_name(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", name.lower())
+
+
+def _allowed_model(name: str, cfg: BundleConfig) -> bool:
+    include = {_normalize_model_name(model) for model in cfg.include_models}
+    exclude = {_normalize_model_name(model) for model in cfg.exclude_models}
+    normalized = _normalize_model_name(name)
+    if include and normalized not in include:
+        return False
+    if normalized in exclude:
+        return False
+    return True
 
 
 def load_histories_and_temporal(cfg: BundleConfig):
@@ -339,7 +366,7 @@ def bsg_action(env, obs):
 
 
 class CEpsPolicy:
-    def __init__(self, epsilon: float = 0.1) -> None:
+    def __init__(self, epsilon: float = 0.18) -> None:
         self.epsilon = epsilon
         self.counts = None
         self.rng = np.random.default_rng(777)
@@ -390,7 +417,9 @@ def plot_lines(x, series: dict[str, list[float]], title: str, ylabel: str, out_p
         "Random": "#6c757d",
         "BSG-like": "#8d99ae",
         "C-epsilon-greedy": "#457b9d",
-        "AWFDRL": "#1d3557",
+        "LRU": "#577590",
+        "LFU": "#4d908e",
+        "Thompson": "#7b2cbf",
         "MAAFDRL": "#2a9d8f",
         "TemporalGraph": "#d62828",
     }
@@ -561,18 +590,24 @@ def main() -> None:
         env, model = build_env_and_model(cfg, histories, temporal_model, item_genres, n_sbs=cfg.sbs_list[0], cache_capacity=cap)
         random_rows = eval_random(env, cfg.eval_episodes, seed=cfg.seed + 100)
         bsg_rows = eval_bsg(env, cfg.eval_episodes, seed=cfg.seed + 200)
-        ceps_rows = eval_c_epsilon_greedy(env, cfg.eval_episodes, seed=cfg.seed + 300)
+        ceps_rows = eval_c_epsilon_greedy(env, cfg.eval_episodes, seed=cfg.seed + 300, epsilon=cfg.c_epsilon)
         tg_rows = evaluate_temporal_graph(env, model, cfg.eval_episodes, seed=cfg.seed + 400, device=cfg.device, diversity_penalty=cfg.decode_diversity_penalty)
-        awf_rows, _, _ = eval_policy_object(env, AttentionWeightedFDRLPolicy(), cfg.eval_episodes, seed=cfg.seed + 450)
-        maaf_rows, _, _ = eval_policy_object(env, MobilityAwareAsyncFDRLPolicy(), cfg.eval_episodes, seed=cfg.seed + 475)
+        lru_rows, _, _ = eval_policy_object(env, LRUPolicy(), cfg.eval_episodes, seed=cfg.seed + 450)
+        lfu_rows, _, _ = eval_policy_object(env, LFUPolicy(), cfg.eval_episodes, seed=cfg.seed + 475)
+        thompson_rows, _, _ = eval_policy_object(env, ThompsonPolicy(seed=cfg.seed + 490), cfg.eval_episodes, seed=cfg.seed + 490)
+        maaf_rows, _, _ = eval_policy_object(env, MobilityAwareAsyncFDRLPolicy(), cfg.eval_episodes, seed=cfg.seed + 500)
         for name, rows in [
             ("Random", random_rows),
             ("BSG-like", bsg_rows),
             ("C-epsilon-greedy", ceps_rows),
-            ("AWFDRL", awf_rows),
+            ("LRU", lru_rows),
+            ("LFU", lfu_rows),
+            ("Thompson", thompson_rows),
             ("MAAFDRL", maaf_rows),
             ("TemporalGraph", tg_rows),
         ]:
+            if not _allowed_model(name, cfg):
+                continue
             summary = summarize_rows(rows)
             capacity_rows.append({"cache_capacity": float(cap), "model": name, **summary})
 
@@ -582,50 +617,63 @@ def main() -> None:
         env, model = build_env_and_model(cfg, histories, temporal_model, item_genres, n_sbs=n_sbs, cache_capacity=cfg.cache_capacities[1 if len(cfg.cache_capacities) > 1 else 0])
         random_rows = eval_random(env, cfg.eval_episodes, seed=cfg.seed + 500)
         bsg_rows = eval_bsg(env, cfg.eval_episodes, seed=cfg.seed + 600)
-        ceps_rows = eval_c_epsilon_greedy(env, cfg.eval_episodes, seed=cfg.seed + 700)
+        ceps_rows = eval_c_epsilon_greedy(env, cfg.eval_episodes, seed=cfg.seed + 700, epsilon=cfg.c_epsilon)
         tg_rows = evaluate_temporal_graph(env, model, cfg.eval_episodes, seed=cfg.seed + 800, device=cfg.device, diversity_penalty=cfg.decode_diversity_penalty)
-        awf_rows, _, _ = eval_policy_object(env, AttentionWeightedFDRLPolicy(), cfg.eval_episodes, seed=cfg.seed + 850)
-        maaf_rows, _, _ = eval_policy_object(env, MobilityAwareAsyncFDRLPolicy(), cfg.eval_episodes, seed=cfg.seed + 875)
+        lru_rows, _, _ = eval_policy_object(env, LRUPolicy(), cfg.eval_episodes, seed=cfg.seed + 850)
+        lfu_rows, _, _ = eval_policy_object(env, LFUPolicy(), cfg.eval_episodes, seed=cfg.seed + 875)
+        thompson_rows, _, _ = eval_policy_object(env, ThompsonPolicy(seed=cfg.seed + 890), cfg.eval_episodes, seed=cfg.seed + 890)
+        maaf_rows, _, _ = eval_policy_object(env, MobilityAwareAsyncFDRLPolicy(), cfg.eval_episodes, seed=cfg.seed + 900)
         for name, rows in [
             ("Random", random_rows),
             ("BSG-like", bsg_rows),
             ("C-epsilon-greedy", ceps_rows),
-            ("AWFDRL", awf_rows),
+            ("LRU", lru_rows),
+            ("LFU", lfu_rows),
+            ("Thompson", thompson_rows),
             ("MAAFDRL", maaf_rows),
             ("TemporalGraph", tg_rows),
         ]:
+            if not _allowed_model(name, cfg):
+                continue
             summary = summarize_rows(rows)
             sbs_rows.append({"n_sbs": float(n_sbs), "model": name, **summary})
 
     print("Collecting trace metrics for cost/overlap...", flush=True)
     env, model = build_env_and_model(cfg, histories, temporal_model, item_genres, n_sbs=cfg.sbs_list[0], cache_capacity=cfg.cache_capacities[1 if len(cfg.cache_capacities) > 1 else 0])
-    ceps_policy = CEpsPolicy()
+    ceps_policy = CEpsPolicy(epsilon=cfg.c_epsilon)
     _, random_costs, random_trace = eval_action_policy(env, random_action, cfg.eval_episodes, seed=cfg.seed + 900)
     _, bsg_costs, bsg_trace = eval_action_policy(env, bsg_action, cfg.eval_episodes, seed=cfg.seed + 1000)
     _, ceps_costs, ceps_trace = eval_action_policy(env, ceps_policy.action, cfg.eval_episodes, seed=cfg.seed + 1100)
     _, tg_costs, tg_trace = eval_action_policy(env, temporal_graph_action_fn(model, cfg.device, cfg.decode_diversity_penalty), cfg.eval_episodes, seed=cfg.seed + 1200)
-    _, awf_costs, awf_trace = eval_policy_object(env, AttentionWeightedFDRLPolicy(), cfg.eval_episodes, seed=cfg.seed + 1250)
-    _, maaf_costs, maaf_trace = eval_policy_object(env, MobilityAwareAsyncFDRLPolicy(), cfg.eval_episodes, seed=cfg.seed + 1275)
+    _, lru_costs, lru_trace = eval_policy_object(env, LRUPolicy(), cfg.eval_episodes, seed=cfg.seed + 1250)
+    _, lfu_costs, lfu_trace = eval_policy_object(env, LFUPolicy(), cfg.eval_episodes, seed=cfg.seed + 1275)
+    _, thompson_costs, thompson_trace = eval_policy_object(env, ThompsonPolicy(seed=cfg.seed + 1285), cfg.eval_episodes, seed=cfg.seed + 1285)
+    _, maaf_costs, maaf_trace = eval_policy_object(env, MobilityAwareAsyncFDRLPolicy(), cfg.eval_episodes, seed=cfg.seed + 1295)
 
     print("Collecting burst-adaptation traces...", flush=True)
     burst_window = (cfg.episode_len // 3, 2 * cfg.episode_len // 3)
     burst_env, burst_model = build_env_and_model(cfg, histories, temporal_model, item_genres, n_sbs=cfg.sbs_list[0], cache_capacity=cfg.cache_capacities[1 if len(cfg.cache_capacities) > 1 else 0])
     burst_random = burst_trace(burst_env, random_action, 1, cfg.seed + 1300, burst_window)
     burst_bsg = burst_trace(burst_env, bsg_action, 1, cfg.seed + 1400, burst_window)
-    ceps_burst_policy = CEpsPolicy()
+    ceps_burst_policy = CEpsPolicy(epsilon=cfg.c_epsilon)
     burst_ceps = burst_trace(burst_env, ceps_burst_policy.action, 1, cfg.seed + 1500, burst_window, ceps_policy=ceps_burst_policy)
     burst_tg = burst_trace(burst_env, temporal_graph_action_fn(burst_model, cfg.device, cfg.decode_diversity_penalty), 1, cfg.seed + 1600, burst_window)
-    burst_awf = burst_trace_policy(burst_env, AttentionWeightedFDRLPolicy(), 1, cfg.seed + 1650, burst_window)
-    burst_maaf = burst_trace_policy(burst_env, MobilityAwareAsyncFDRLPolicy(), 1, cfg.seed + 1675, burst_window)
+    burst_lru = burst_trace_policy(burst_env, LRUPolicy(), 1, cfg.seed + 1650, burst_window)
+    burst_lfu = burst_trace_policy(burst_env, LFUPolicy(), 1, cfg.seed + 1675, burst_window)
+    burst_thompson = burst_trace_policy(burst_env, ThompsonPolicy(seed=cfg.seed + 1685), 1, cfg.seed + 1685, burst_window)
+    burst_maaf = burst_trace_policy(burst_env, MobilityAwareAsyncFDRLPolicy(), 1, cfg.seed + 1695, burst_window)
 
     cost_rows = [
         {"model": "Random", **random_costs},
         {"model": "BSG-like", **bsg_costs},
         {"model": "C-epsilon-greedy", **ceps_costs},
-        {"model": "AWFDRL", **awf_costs},
+        {"model": "LRU", **lru_costs},
+        {"model": "LFU", **lfu_costs},
+        {"model": "Thompson", **thompson_costs},
         {"model": "MAAFDRL", **maaf_costs},
         {"model": "TemporalGraph", **tg_costs},
     ]
+    cost_rows = [row for row in cost_rows if _allowed_model(str(row["model"]), cfg)]
 
     print("Saving CSVs and plots...", flush=True)
     # Save CSVs.
@@ -636,13 +684,17 @@ def main() -> None:
         (cfg.output_dir / "random_trace.csv", random_trace),
         (cfg.output_dir / "bsg_trace.csv", bsg_trace),
         (cfg.output_dir / "c_epsilon_trace.csv", ceps_trace),
-        (cfg.output_dir / "awfdrl_trace.csv", awf_trace),
+        (cfg.output_dir / "lru_trace.csv", lru_trace),
+        (cfg.output_dir / "lfu_trace.csv", lfu_trace),
+        (cfg.output_dir / "thompson_trace.csv", thompson_trace),
         (cfg.output_dir / "maafdrl_trace.csv", maaf_trace),
         (cfg.output_dir / "temporal_graph_trace.csv", tg_trace),
         (cfg.output_dir / "burst_random.csv", burst_random),
         (cfg.output_dir / "burst_bsg.csv", burst_bsg),
         (cfg.output_dir / "burst_c_epsilon.csv", burst_ceps),
-        (cfg.output_dir / "burst_awfdrl.csv", burst_awf),
+        (cfg.output_dir / "burst_lru.csv", burst_lru),
+        (cfg.output_dir / "burst_lfu.csv", burst_lfu),
+        (cfg.output_dir / "burst_thompson.csv", burst_thompson),
         (cfg.output_dir / "burst_maafdrl.csv", burst_maaf),
         (cfg.output_dir / "burst_temporal_graph.csv", burst_tg),
     ]:
@@ -659,7 +711,7 @@ def main() -> None:
     ]:
         series = {}
         x = cfg.cache_capacities
-        for model_name in ["Random", "BSG-like", "C-epsilon-greedy", "AWFDRL", "MAAFDRL", "TemporalGraph"]:
+        for model_name in [name for name in ["Random", "BSG-like", "C-epsilon-greedy", "LRU", "LFU", "Thompson", "MAAFDRL", "TemporalGraph"] if _allowed_model(name, cfg)]:
             series[model_name] = [next(r[metric] for r in capacity_rows if r["model"] == model_name and int(r["cache_capacity"]) == cap) for cap in x]
         plot_lines(x, series, filename.replace(".png", "").replace("_", " ").title(), ylabel, cfg.output_dir / filename)
 
@@ -670,7 +722,7 @@ def main() -> None:
     ]:
         series = {}
         x = cfg.sbs_list
-        for model_name in ["Random", "BSG-like", "C-epsilon-greedy", "AWFDRL", "MAAFDRL", "TemporalGraph"]:
+        for model_name in [name for name in ["Random", "BSG-like", "C-epsilon-greedy", "LRU", "LFU", "Thompson", "MAAFDRL", "TemporalGraph"] if _allowed_model(name, cfg)]:
             series[model_name] = [next(r[metric] for r in sbs_rows if r["model"] == model_name and int(r["n_sbs"]) == n_sbs) for n_sbs in x]
         plot_lines(x, series, filename.replace(".png", "").replace("_", " ").title(), ylabel, cfg.output_dir / filename)
 
@@ -680,9 +732,24 @@ def main() -> None:
             "Random": random_costs,
             "BSG-like": bsg_costs,
             "C-epsilon-greedy": ceps_costs,
-            "AWFDRL": awf_costs,
+            "LRU": lru_costs,
+            "LFU": lfu_costs,
+            "Thompson": thompson_costs,
             "MAAFDRL": maaf_costs,
             "TemporalGraph": tg_costs,
+        } if not cfg.include_models and not cfg.exclude_models else {
+            name: costs
+            for name, costs in {
+                "Random": random_costs,
+                "BSG-like": bsg_costs,
+                "C-epsilon-greedy": ceps_costs,
+                "LRU": lru_costs,
+                "LFU": lfu_costs,
+                "Thompson": thompson_costs,
+                "MAAFDRL": maaf_costs,
+                "TemporalGraph": tg_costs,
+            }.items()
+            if _allowed_model(name, cfg)
         },
         cfg.output_dir / "cost_breakdown.png",
     )
@@ -693,10 +760,14 @@ def main() -> None:
         ("Random", burst_random, "#6c757d"),
         ("BSG-like", burst_bsg, "#8d99ae"),
         ("C-epsilon-greedy", burst_ceps, "#457b9d"),
-        ("AWFDRL", burst_awf, "#1d3557"),
+        ("LRU", burst_lru, "#577590"),
+        ("LFU", burst_lfu, "#4d908e"),
+        ("Thompson", burst_thompson, "#7b2cbf"),
         ("MAAFDRL", burst_maaf, "#2a9d8f"),
         ("TemporalGraph", burst_tg, "#d62828"),
     ]:
+        if not _allowed_model(label, cfg):
+            continue
         steps = [int(r["step"]) for r in rows]
         axes[0].plot(steps, [r["burst_local_hit"] for r in rows], label=label, color=color, linewidth=2.0)
         axes[1].plot(steps, [r["burst_edge_hit"] for r in rows], label=label, color=color, linewidth=2.0)
@@ -720,10 +791,14 @@ def main() -> None:
         ("Random", random_trace, "#6c757d"),
         ("BSG-like", bsg_trace, "#8d99ae"),
         ("C-epsilon-greedy", ceps_trace, "#457b9d"),
-        ("AWFDRL", awf_trace, "#1d3557"),
+        ("LRU", lru_trace, "#577590"),
+        ("LFU", lfu_trace, "#4d908e"),
+        ("Thompson", thompson_trace, "#7b2cbf"),
         ("MAAFDRL", maaf_trace, "#2a9d8f"),
         ("TemporalGraph", tg_trace, "#d62828"),
     ]:
+        if not _allowed_model(label, cfg):
+            continue
         steps = np.arange(len(rows))
         axes[0].plot(steps, [r["cache_overlap"] for r in rows], label=label, color=color, linewidth=2.0)
         axes[1].plot(steps, [r["cache_diversity"] for r in rows], label=label, color=color, linewidth=2.0)

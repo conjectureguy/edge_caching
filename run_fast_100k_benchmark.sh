@@ -10,6 +10,7 @@ DATASET_NAME="${DATASET_NAME:-ml-100k}"
 ROOT_BASE="${ROOT_BASE:-outputs/fast_100k_runs}"
 RUN_TAG="${RUN_TAG:-$(date +%Y%m%d_%H%M%S)}"
 FAIL_IF_OURS_NOT_BEST="${FAIL_IF_OURS_NOT_BEST:-0}"
+C_EPSILON="${C_EPSILON:-0.18}"
 
 ROOT="${ROOT_BASE}/temporalgraph_${RUN_TAG}"
 RUN_DIR="${ROOT}/novel_realworld_main"
@@ -26,6 +27,7 @@ echo "Repo root   : ${REPO_ROOT}"
 echo "Python      : ${PYTHON_BIN}"
 echo "Device      : ${DEVICE}"
 echo "Dataset     : ${DATASET_NAME}"
+echo "C-epsilon   : ${C_EPSILON}"
 echo "Output root : ${ROOT}"
 echo "============================================================"
 
@@ -57,8 +59,11 @@ echo "[1/4] Training Temporal Encoder + Elastic FL + GNN policy"
   --decode-diversity-penalty 0.35 \
   --teacher-guidance-weight 1.50 \
   --checkpoint-eval-episodes 3 \
-  --reinforce-epochs 4 \
+  --reinforce-epochs 2 \
+  --reinforce-lr 0.00005 \
+  --reinforce-teacher-anchor-weight 0.12 \
   --eval-episodes 3 \
+  --c-epsilon-eval "${C_EPSILON}" \
   --seed 42 \
   --log-level INFO \
   2>&1 | tee "${ROOT}/train.log"

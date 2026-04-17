@@ -120,12 +120,13 @@ class ImitationHistory:
 class ReinforceConfig:
     epochs: int = 6
     episodes_per_epoch: int = 4
-    lr: float = 1e-4
+    lr: float = 5e-5
     gamma: float = 0.99
     entropy_weight: float = 1e-3
     device: str = "cpu"
     decode_diversity_penalty: float = 0.25
     teacher_guidance_weight: float = 0.55
+    teacher_anchor_weight: float = 0.12
     placement_interval: int = 3
     edge_hit_bonus_weight: float = 2500.0
     checkpoint_reward_weight: float = 1.0
@@ -650,6 +651,7 @@ def fine_tune_graph_cache_policy_reinforce(
     device = torch.device(cfg.device)
     model = model.to(device)
     opt = torch.optim.Adam(model.parameters(), lr=cfg.lr)
+    teacher_anchor_loss_fn = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(3.0, device=device))
     best_state = copy.deepcopy(model.state_dict())
     initial_eval = evaluate_graph_cache_policy(
         env,
@@ -688,6 +690,7 @@ def fine_tune_graph_cache_policy_reinforce(
             last_action: np.ndarray | None = None
             log_probs: list[torch.Tensor] = []
             entropies: list[torch.Tensor] = []
+            teacher_anchor_terms: list[torch.Tensor] = []
             rewards_per_step: list[float] = []
             raw_rewards_per_step: list[float] = []
             local_per_step: list[float] = []
@@ -696,7 +699,11 @@ def fine_tune_graph_cache_policy_reinforce(
             while not done:
                 node, cand, adj, mask = _obs_to_tensors(obs, device)
                 logits = model(node, cand, adj, mask)
+                teacher_items = env.cooperative_teacher_action()
                 teacher_scores = env.cooperative_teacher_scores()
+                teacher_mask = env.candidate_items_to_slot_mask(teacher_items)
+                teacher_target = torch.as_tensor(teacher_mask, dtype=torch.float32, device=device)
+                teacher_anchor_terms.append(teacher_anchor_loss_fn(logits, teacher_target))
                 chosen, log_prob, entropy = sample_cache_items(
                     logits,
                     env,
@@ -734,7 +741,9 @@ def fine_tune_graph_cache_policy_reinforce(
             adv = (adv - adv.mean()) / (adv.std(unbiased=False) + 1e-6)
             log_prob_t = torch.stack(log_probs)
             entropy_t = torch.stack(entropies)
-            loss = -(adv.detach() * log_prob_t).mean() - cfg.entropy_weight * entropy_t.mean()
+            rl_loss = -(adv.detach() * log_prob_t).mean() - cfg.entropy_weight * entropy_t.mean()
+            teacher_anchor_loss = torch.stack(teacher_anchor_terms).mean()
+            loss = rl_loss + cfg.teacher_anchor_weight * teacher_anchor_loss
 
             opt.zero_grad()
             loss.backward()
@@ -750,12 +759,14 @@ def fine_tune_graph_cache_policy_reinforce(
                 (episode + 1) % max(1, log_every_episode) == 0 or (episode + 1) == cfg.episodes_per_epoch
             ):
                 logger.info(
-                    "Reinforce epoch %d/%d episode %d/%d complete | loss=%.6f reward=%.4f local_hit=%.4f paper_hit=%.4f",
+                    "Reinforce epoch %d/%d episode %d/%d complete | loss=%.6f rl_loss=%.6f teacher_anchor=%.6f reward=%.4f local_hit=%.4f paper_hit=%.4f",
                     epoch + 1,
                     cfg.epochs,
                     episode + 1,
                     cfg.episodes_per_epoch,
                     float(np.mean(epoch_losses)) if epoch_losses else float("nan"),
+                    float(rl_loss.item()),
+                    float(teacher_anchor_loss.item()),
                     float(np.mean(epoch_rewards)) if epoch_rewards else float("nan"),
                     float(np.mean(epoch_local)) if epoch_local else float("nan"),
                     float(np.mean(epoch_paper)) if epoch_paper else float("nan"),

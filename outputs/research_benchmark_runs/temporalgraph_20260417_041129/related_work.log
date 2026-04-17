@@ -1,0 +1,98 @@
+2026-04-17 14:17:53,736 | INFO | related_work_compare | Stage 1/4: loading dataset ml-1m
+2026-04-17 14:18:01,631 | INFO | related_work_compare | Stage 2/4: loading trained temporal encoder from outputs/research_benchmark_runs/temporalgraph_20260417_041129/novel_realworld_main/realworld_temporal_encoder.pt
+2026-04-17 14:18:01,682 | INFO | related_work_compare | Loaded compatible outputs/research_benchmark_runs/temporalgraph_20260417_041129/novel_realworld_main/realworld_temporal_encoder.pt | matched=65 skipped=0
+2026-04-17 14:18:01,683 | INFO | related_work_compare | Stage 3/4: building evaluation environment
+/home/rahul/miniforge3/lib/python3.12/site-packages/torch/nn/modules/transformer.py:531: UserWarning: The PyTorch API of nested tensors is in prototype stage and will change in the near future. We recommend specifying layout=torch.jagged when constructing a nested tensor, as this layout receives active development, has better operator coverage, and works with torch.compile. (Triggered internally at /pytorch/aten/src/ATen/NestedTensorImpl.cpp:178.)
+  output = torch._nested_tensor_from_mask(
+2026-04-17 14:18:02,644 | INFO | related_work_compare | Environment ready | node_dim=137 candidate_dim=74
+2026-04-17 14:18:02,645 | INFO | related_work_compare | Stage 4/4: evaluating our method and paper-inspired baselines
+2026-04-17 14:18:02,657 | INFO | related_work_compare | Evaluating TemporalGraph in the same fresh harness as the paper-inspired baselines
+2026-04-17 14:24:51,152 | INFO | related_work_compare | Evaluating MAAFDRL baseline
+2026-04-17 14:25:05,887 | INFO | related_work_compare | MAAFDRL episode 1/20 | reward=1508.0000 local=0.2246 neighbor=0.1615 cloud=0.6139 paper_hit=0.3861
+2026-04-17 14:25:21,123 | INFO | related_work_compare | MAAFDRL episode 2/20 | reward=1650.4000 local=0.2359 neighbor=0.1726 cloud=0.5915 paper_hit=0.4085
+2026-04-17 14:25:38,583 | INFO | related_work_compare | MAAFDRL episode 3/20 | reward=1443.9000 local=0.2008 neighbor=0.2085 cloud=0.5908 paper_hit=0.4092
+2026-04-17 14:25:53,979 | INFO | related_work_compare | MAAFDRL episode 4/20 | reward=1758.5000 local=0.2191 neighbor=0.1691 cloud=0.6119 paper_hit=0.3881
+2026-04-17 14:26:10,922 | INFO | related_work_compare | MAAFDRL episode 5/20 | reward=1506.1000 local=0.2334 neighbor=0.1905 cloud=0.5761 paper_hit=0.4239
+2026-04-17 14:26:27,286 | INFO | related_work_compare | MAAFDRL episode 6/20 | reward=1693.5000 local=0.2278 neighbor=0.1808 cloud=0.5914 paper_hit=0.4086
+2026-04-17 14:26:45,798 | INFO | related_work_compare | MAAFDRL episode 7/20 | reward=1717.5000 local=0.2389 neighbor=0.1584 cloud=0.6027 paper_hit=0.3973
+2026-04-17 14:27:00,452 | INFO | related_work_compare | MAAFDRL episode 8/20 | reward=1776.8000 local=0.2353 neighbor=0.1781 cloud=0.5867 paper_hit=0.4133
+2026-04-17 14:27:16,341 | INFO | related_work_compare | MAAFDRL episode 9/20 | reward=1578.3000 local=0.2343 neighbor=0.1631 cloud=0.6026 paper_hit=0.3974
+2026-04-17 14:27:32,648 | INFO | related_work_compare | MAAFDRL episode 10/20 | reward=1628.5000 local=0.2306 neighbor=0.1634 cloud=0.6060 paper_hit=0.3940
+2026-04-17 14:27:48,960 | INFO | related_work_compare | MAAFDRL episode 11/20 | reward=1673.6000 local=0.2343 neighbor=0.1503 cloud=0.6154 paper_hit=0.3846
+2026-04-17 14:28:03,197 | INFO | related_work_compare | MAAFDRL episode 12/20 | reward=1589.6000 local=0.2216 neighbor=0.2014 cloud=0.5770 paper_hit=0.4230
+2026-04-17 14:28:18,907 | INFO | related_work_compare | MAAFDRL episode 13/20 | reward=1595.2000 local=0.2282 neighbor=0.1661 cloud=0.6057 paper_hit=0.3943
+2026-04-17 14:28:34,217 | INFO | related_work_compare | MAAFDRL episode 14/20 | reward=1474.9000 local=0.2130 neighbor=0.1749 cloud=0.6121 paper_hit=0.3879
+2026-04-17 14:28:49,057 | INFO | related_work_compare | MAAFDRL episode 15/20 | reward=1497.0000 local=0.2052 neighbor=0.1699 cloud=0.6249 paper_hit=0.3751
+2026-04-17 14:29:08,106 | INFO | related_work_compare | MAAFDRL episode 16/20 | reward=1751.6000 local=0.2414 neighbor=0.1837 cloud=0.5750 paper_hit=0.4250
+2026-04-17 14:29:24,611 | INFO | related_work_compare | MAAFDRL episode 17/20 | reward=1742.4000 local=0.2328 neighbor=0.1673 cloud=0.5999 paper_hit=0.4001
+2026-04-17 14:29:39,098 | INFO | related_work_compare | MAAFDRL episode 18/20 | reward=1701.1000 local=0.2413 neighbor=0.1579 cloud=0.6007 paper_hit=0.3993
+2026-04-17 14:29:52,979 | INFO | related_work_compare | MAAFDRL episode 19/20 | reward=1589.3000 local=0.2201 neighbor=0.1819 cloud=0.5980 paper_hit=0.4020
+2026-04-17 14:30:06,969 | INFO | related_work_compare | MAAFDRL episode 20/20 | reward=1508.8000 local=0.2225 neighbor=0.1453 cloud=0.6322 paper_hit=0.3678
+2026-04-17 14:30:06,969 | INFO | related_work_compare | Evaluating Thompson baseline
+2026-04-17 14:30:26,488 | INFO | related_work_compare | Thompson episode 1/20 | reward=-559.0000 local=0.0071 neighbor=0.0189 cloud=0.9740 paper_hit=0.0260
+2026-04-17 14:30:41,485 | INFO | related_work_compare | Thompson episode 2/20 | reward=-577.0000 local=0.0041 neighbor=0.0165 cloud=0.9794 paper_hit=0.0206
+2026-04-17 14:30:54,727 | INFO | related_work_compare | Thompson episode 3/20 | reward=-573.0000 local=0.0073 neighbor=0.0159 cloud=0.9768 paper_hit=0.0232
+2026-04-17 14:31:14,123 | INFO | related_work_compare | Thompson episode 4/20 | reward=-565.9000 local=0.0062 neighbor=0.0151 cloud=0.9787 paper_hit=0.0213
+2026-04-17 14:31:30,303 | INFO | related_work_compare | Thompson episode 5/20 | reward=-574.0000 local=0.0048 neighbor=0.0151 cloud=0.9801 paper_hit=0.0199
+2026-04-17 14:31:46,664 | INFO | related_work_compare | Thompson episode 6/20 | reward=-572.9000 local=0.0089 neighbor=0.0105 cloud=0.9807 paper_hit=0.0193
+2026-04-17 14:32:02,070 | INFO | related_work_compare | Thompson episode 7/20 | reward=-574.9000 local=0.0043 neighbor=0.0199 cloud=0.9758 paper_hit=0.0242
+2026-04-17 14:32:21,077 | INFO | related_work_compare | Thompson episode 8/20 | reward=-559.9000 local=0.0074 neighbor=0.0182 cloud=0.9744 paper_hit=0.0256
+2026-04-17 14:32:38,182 | INFO | related_work_compare | Thompson episode 9/20 | reward=-583.0000 local=0.0040 neighbor=0.0143 cloud=0.9817 paper_hit=0.0183
+2026-04-17 14:32:54,570 | INFO | related_work_compare | Thompson episode 10/20 | reward=-602.6000 local=0.0027 neighbor=0.0122 cloud=0.9851 paper_hit=0.0149
+2026-04-17 14:33:11,525 | INFO | related_work_compare | Thompson episode 11/20 | reward=-572.9000 local=0.0066 neighbor=0.0065 cloud=0.9869 paper_hit=0.0131
+2026-04-17 14:33:27,574 | INFO | related_work_compare | Thompson episode 12/20 | reward=-576.9000 local=0.0036 neighbor=0.0156 cloud=0.9808 paper_hit=0.0192
+2026-04-17 14:33:44,503 | INFO | related_work_compare | Thompson episode 13/20 | reward=-575.9000 local=0.0075 neighbor=0.0115 cloud=0.9810 paper_hit=0.0190
+2026-04-17 14:33:58,814 | INFO | related_work_compare | Thompson episode 14/20 | reward=-586.0000 local=0.0063 neighbor=0.0158 cloud=0.9779 paper_hit=0.0221
+2026-04-17 14:34:17,562 | INFO | related_work_compare | Thompson episode 15/20 | reward=-562.0000 local=0.0081 neighbor=0.0113 cloud=0.9806 paper_hit=0.0194
+2026-04-17 14:34:35,395 | INFO | related_work_compare | Thompson episode 16/20 | reward=-553.9000 local=0.0066 neighbor=0.0252 cloud=0.9682 paper_hit=0.0318
+2026-04-17 14:34:51,619 | INFO | related_work_compare | Thompson episode 17/20 | reward=-560.8000 local=0.0074 neighbor=0.0141 cloud=0.9785 paper_hit=0.0215
+2026-04-17 14:35:09,298 | INFO | related_work_compare | Thompson episode 18/20 | reward=-593.9000 local=0.0044 neighbor=0.0110 cloud=0.9845 paper_hit=0.0155
+2026-04-17 14:35:24,993 | INFO | related_work_compare | Thompson episode 19/20 | reward=-573.0000 local=0.0055 neighbor=0.0148 cloud=0.9796 paper_hit=0.0204
+2026-04-17 14:35:40,989 | INFO | related_work_compare | Thompson episode 20/20 | reward=-588.9000 local=0.0046 neighbor=0.0110 cloud=0.9844 paper_hit=0.0156
+2026-04-17 14:35:40,989 | INFO | related_work_compare | Evaluating LFU baseline
+2026-04-17 14:35:58,146 | INFO | related_work_compare | LFU episode 1/20 | reward=1873.7000 local=0.2462 neighbor=0.1362 cloud=0.6176 paper_hit=0.3824
+2026-04-17 14:36:15,779 | INFO | related_work_compare | LFU episode 2/20 | reward=1965.7000 local=0.2543 neighbor=0.1338 cloud=0.6119 paper_hit=0.3881
+2026-04-17 14:36:35,452 | INFO | related_work_compare | LFU episode 3/20 | reward=2085.1000 local=0.2696 neighbor=0.1557 cloud=0.5747 paper_hit=0.4253
+2026-04-17 14:36:51,985 | INFO | related_work_compare | LFU episode 4/20 | reward=1732.6000 local=0.2352 neighbor=0.1351 cloud=0.6298 paper_hit=0.3702
+2026-04-17 14:37:11,673 | INFO | related_work_compare | LFU episode 5/20 | reward=1838.9000 local=0.2483 neighbor=0.1467 cloud=0.6050 paper_hit=0.3950
+2026-04-17 14:37:26,858 | INFO | related_work_compare | LFU episode 6/20 | reward=2108.2000 local=0.2738 neighbor=0.1605 cloud=0.5658 paper_hit=0.4342
+2026-04-17 14:37:44,844 | INFO | related_work_compare | LFU episode 7/20 | reward=2002.3000 local=0.2606 neighbor=0.1549 cloud=0.5845 paper_hit=0.4155
+2026-04-17 14:38:00,604 | INFO | related_work_compare | LFU episode 8/20 | reward=1733.2000 local=0.2162 neighbor=0.1409 cloud=0.6345 paper_hit=0.3572
+2026-04-17 14:38:18,651 | INFO | related_work_compare | LFU episode 9/20 | reward=2216.3000 local=0.2767 neighbor=0.1319 cloud=0.5914 paper_hit=0.4086
+2026-04-17 14:38:35,254 | INFO | related_work_compare | LFU episode 10/20 | reward=2080.4000 local=0.2741 neighbor=0.1389 cloud=0.5870 paper_hit=0.4130
+2026-04-17 14:38:53,823 | INFO | related_work_compare | LFU episode 11/20 | reward=1906.5000 local=0.2559 neighbor=0.1539 cloud=0.5903 paper_hit=0.4097
+2026-04-17 14:39:12,909 | INFO | related_work_compare | LFU episode 12/20 | reward=1973.0000 local=0.2634 neighbor=0.1398 cloud=0.5968 paper_hit=0.4032
+2026-04-17 14:39:31,021 | INFO | related_work_compare | LFU episode 13/20 | reward=1942.9000 local=0.2593 neighbor=0.1578 cloud=0.5746 paper_hit=0.4171
+2026-04-17 14:39:46,345 | INFO | related_work_compare | LFU episode 14/20 | reward=1814.8000 local=0.2515 neighbor=0.1344 cloud=0.6141 paper_hit=0.3859
+2026-04-17 14:40:02,595 | INFO | related_work_compare | LFU episode 15/20 | reward=1939.3000 local=0.2503 neighbor=0.1504 cloud=0.5993 paper_hit=0.4007
+2026-04-17 14:40:23,329 | INFO | related_work_compare | LFU episode 16/20 | reward=1987.3000 local=0.2572 neighbor=0.1469 cloud=0.5959 paper_hit=0.4041
+2026-04-17 14:40:41,318 | INFO | related_work_compare | LFU episode 17/20 | reward=1973.7000 local=0.2419 neighbor=0.1493 cloud=0.6088 paper_hit=0.3912
+2026-04-17 14:40:59,548 | INFO | related_work_compare | LFU episode 18/20 | reward=2037.2000 local=0.2625 neighbor=0.1421 cloud=0.5954 paper_hit=0.4046
+2026-04-17 14:41:13,968 | INFO | related_work_compare | LFU episode 19/20 | reward=1935.4000 local=0.2508 neighbor=0.1401 cloud=0.6092 paper_hit=0.3908
+2026-04-17 14:41:33,030 | INFO | related_work_compare | LFU episode 20/20 | reward=2059.9000 local=0.2666 neighbor=0.1488 cloud=0.5846 paper_hit=0.4154
+2026-04-17 14:41:33,030 | INFO | related_work_compare | Evaluating LRU baseline
+2026-04-17 14:41:48,953 | INFO | related_work_compare | LRU episode 1/20 | reward=1518.3000 local=0.2031 neighbor=0.1784 cloud=0.6185 paper_hit=0.3815
+2026-04-17 14:42:04,682 | INFO | related_work_compare | LRU episode 2/20 | reward=1524.4000 local=0.1796 neighbor=0.2072 cloud=0.6132 paper_hit=0.3868
+2026-04-17 14:42:21,049 | INFO | related_work_compare | LRU episode 3/20 | reward=1396.2000 local=0.1797 neighbor=0.1834 cloud=0.6370 paper_hit=0.3630
+2026-04-17 14:42:38,969 | INFO | related_work_compare | LRU episode 4/20 | reward=1490.1000 local=0.1794 neighbor=0.1714 cloud=0.6492 paper_hit=0.3508
+2026-04-17 14:42:57,018 | INFO | related_work_compare | LRU episode 5/20 | reward=1708.2000 local=0.1927 neighbor=0.2067 cloud=0.6007 paper_hit=0.3993
+2026-04-17 14:43:15,391 | INFO | related_work_compare | LRU episode 6/20 | reward=1450.7000 local=0.1779 neighbor=0.1853 cloud=0.6368 paper_hit=0.3632
+2026-04-17 14:43:29,837 | INFO | related_work_compare | LRU episode 7/20 | reward=1489.7000 local=0.1825 neighbor=0.1807 cloud=0.6368 paper_hit=0.3632
+2026-04-17 14:43:45,048 | INFO | related_work_compare | LRU episode 8/20 | reward=1475.1000 local=0.1912 neighbor=0.1721 cloud=0.6367 paper_hit=0.3633
+2026-04-17 14:44:01,012 | INFO | related_work_compare | LRU episode 9/20 | reward=1557.2000 local=0.2022 neighbor=0.1943 cloud=0.6034 paper_hit=0.3966
+2026-04-17 14:44:20,817 | INFO | related_work_compare | LRU episode 10/20 | reward=1637.7000 local=0.1935 neighbor=0.1766 cloud=0.6299 paper_hit=0.3701
+2026-04-17 14:44:39,854 | INFO | related_work_compare | LRU episode 11/20 | reward=1532.1000 local=0.1965 neighbor=0.1783 cloud=0.6252 paper_hit=0.3748
+2026-04-17 14:44:54,003 | INFO | related_work_compare | LRU episode 12/20 | reward=1566.5000 local=0.1971 neighbor=0.1861 cloud=0.6168 paper_hit=0.3832
+2026-04-17 14:45:09,093 | INFO | related_work_compare | LRU episode 13/20 | reward=1474.3000 local=0.1885 neighbor=0.1718 cloud=0.6396 paper_hit=0.3604
+2026-04-17 14:45:28,270 | INFO | related_work_compare | LRU episode 14/20 | reward=1510.4000 local=0.2047 neighbor=0.1680 cloud=0.6273 paper_hit=0.3727
+2026-04-17 14:45:43,164 | INFO | related_work_compare | LRU episode 15/20 | reward=1438.0000 local=0.1664 neighbor=0.1872 cloud=0.6464 paper_hit=0.3536
+2026-04-17 14:46:05,248 | INFO | related_work_compare | LRU episode 16/20 | reward=1514.8000 local=0.1860 neighbor=0.1787 cloud=0.6353 paper_hit=0.3647
+2026-04-17 14:46:20,772 | INFO | related_work_compare | LRU episode 17/20 | reward=1702.6000 local=0.2084 neighbor=0.1677 cloud=0.6238 paper_hit=0.3762
+2026-04-17 14:46:37,489 | INFO | related_work_compare | LRU episode 18/20 | reward=1607.1000 local=0.2108 neighbor=0.1745 cloud=0.6148 paper_hit=0.3852
+2026-04-17 14:46:53,585 | INFO | related_work_compare | LRU episode 19/20 | reward=1472.2000 local=0.1889 neighbor=0.1892 cloud=0.6219 paper_hit=0.3781
+2026-04-17 14:47:10,338 | INFO | related_work_compare | LRU episode 20/20 | reward=1632.3000 local=0.1920 neighbor=0.1753 cloud=0.6328 paper_hit=0.3672
+2026-04-17 14:47:11,453 | INFO | related_work_compare | TemporalGraph: reward_mean=2604.8000 local_hit_mean=0.3234 paper_hit_mean=0.5039 cloud_fetch_mean=0.4957
+2026-04-17 14:47:11,453 | INFO | related_work_compare | MAAFDRL: reward_mean=1619.2500 local_hit_mean=0.2270 paper_hit_mean=0.3993 cloud_fetch_mean=0.6007
+2026-04-17 14:47:11,454 | INFO | related_work_compare | Thompson: reward_mean=-574.3200 local_hit_mean=0.0059 paper_hit_mean=0.0206 cloud_fetch_mean=0.9794
+2026-04-17 14:47:11,454 | INFO | related_work_compare | LFU: reward_mean=1960.3200 local_hit_mean=0.2557 paper_hit_mean=0.4006 cloud_fetch_mean=0.5986
+2026-04-17 14:47:11,454 | INFO | related_work_compare | LRU: reward_mean=1534.8950 local_hit_mean=0.1911 paper_hit_mean=0.3727 cloud_fetch_mean=0.6273

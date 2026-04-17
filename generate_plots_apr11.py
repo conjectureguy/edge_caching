@@ -58,9 +58,11 @@ plt.rcParams.update(
 
 SCHEME_STYLE: dict[str, dict[str, Any]] = {
     "TemporalGraph": {"color": "#d62828", "marker": "D", "linestyle": "-", "hatch": "///", "zorder": 10},
-    "AWFDRL": {"color": "#1d3557", "marker": "s", "linestyle": "--", "hatch": "\\\\\\", "zorder": 7},
     "MAAFDRL": {"color": "#2a9d8f", "marker": "^", "linestyle": "-.", "hatch": "xxx", "zorder": 7},
     "C-ε-greedy": {"color": "#e76f51", "marker": "P", "linestyle": (0, (5, 1)), "hatch": "---", "zorder": 5},
+    "LRU": {"color": "#577590", "marker": "s", "linestyle": "--", "hatch": "\\\\\\", "zorder": 6},
+    "LFU": {"color": "#4d908e", "marker": "X", "linestyle": (0, (4, 1, 1, 1)), "hatch": "ooo", "zorder": 6},
+    "Thompson": {"color": "#7b2cbf", "marker": "^", "linestyle": (0, (1, 1)), "hatch": "///", "zorder": 6},
     "BSG": {"color": "#8d99ae", "marker": "o", "linestyle": (0, (3, 1, 1, 1)), "hatch": "+++", "zorder": 4},
     "Random": {"color": "#6c757d", "marker": "v", "linestyle": ":", "hatch": "...", "zorder": 3},
     "Teacher": {"color": "#f4a261", "marker": "X", "linestyle": (0, (1, 1)), "hatch": "ooo", "zorder": 6},
@@ -71,18 +73,22 @@ PAIR_STYLE = {
     "UE moving, SBS moving": {"color": "#d62828", "marker": "D", "linestyle": "-"},
 }
 
-BAR_ORDER = ["TemporalGraph", "AWFDRL", "MAAFDRL", "C-ε-greedy", "BSG", "Random", "Teacher"]
+BAR_ORDER = ["TemporalGraph", "MAAFDRL", "Thompson", "LFU", "LRU", "C-ε-greedy", "BSG", "Random", "Teacher"]
 LINE_ORDER = BAR_ORDER[:]
 
 _NAME_MAP = {
     "Our-TemporalGraph": "TemporalGraph",
     "TemporalGraph": "TemporalGraph",
-    "Paper2-AWFDRL-like": "AWFDRL",
     "Paper3-MAAFDRL-like": "MAAFDRL",
     "Paper4-DTS-DDPG-like": None,
     "DTS-DDPG": None,
-    "AWFDRL-like": "AWFDRL",
+    "AWFDRL": None,
+    "AWFDRL-like": None,
     "MAAFDRL-like": "MAAFDRL",
+    "MAAFDRL": "MAAFDRL",
+    "LRU": "LRU",
+    "LFU": "LFU",
+    "Thompson": "Thompson",
     "BSG-like": "BSG",
     "C-epsilon-greedy": "C-ε-greedy",
     "Random": "Random",
@@ -90,6 +96,27 @@ _NAME_MAP = {
 }
 
 SUMMARY_RE = re.compile(r"^(?P<name>[^:]+): (?P<body>.+)$")
+
+
+def _normalize_model_name(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", name.lower())
+
+
+def build_model_filter(include_models: list[str], exclude_models: list[str]):
+    include = {_normalize_model_name(name) for name in include_models}
+    exclude = {_normalize_model_name(name) for name in exclude_models}
+
+    def _allowed(name: str | None) -> bool:
+        if name is None:
+            return False
+        normalized = _normalize_model_name(name)
+        if include and normalized not in include:
+            return False
+        if normalized in exclude:
+            return False
+        return True
+
+    return _allowed
 
 
 def map_name(raw: str) -> str | None:
@@ -331,15 +358,19 @@ def bundle_has_extended_baselines(bundle_dir: Path) -> bool:
         "capacity_sweep.csv",
         "sbs_sweep.csv",
         "cost_summary.csv",
-        "awfdrl_trace.csv",
+        "lru_trace.csv",
+        "lfu_trace.csv",
+        "thompson_trace.csv",
         "maafdrl_trace.csv",
-        "burst_awfdrl.csv",
+        "burst_lru.csv",
+        "burst_lfu.csv",
+        "burst_thompson.csv",
         "burst_maafdrl.csv",
     ]
     for filename in required_files:
         if not (bundle_dir / filename).exists():
             return False
-    required = {"AWFDRL", "MAAFDRL"}
+    required = {"LRU", "LFU", "Thompson", "MAAFDRL"}
     for filename in ["capacity_sweep.csv", "sbs_sweep.csv", "cost_summary.csv"]:
         models = {row["model"] for row in load_csv(bundle_dir / filename)}
         if not required.issubset(models):
@@ -350,7 +381,7 @@ def bundle_has_extended_baselines(bundle_dir: Path) -> bool:
 def ensure_extended_bundle(data_dir: Path, output_dir: Path, run_dir: Path, python_bin: str) -> Path:
     source_bundle = data_dir / "novel_comparison_bundle"
     if bundle_has_extended_baselines(source_bundle):
-        print("Novel comparison bundle already includes AWFDRL and MAAFDRL.")
+        print("Novel comparison bundle already includes LRU, LFU, Thompson, and MAAFDRL.")
         return source_bundle
 
     generated_bundle = output_dir / "_generated_data" / "novel_comparison_bundle"
@@ -358,7 +389,7 @@ def ensure_extended_bundle(data_dir: Path, output_dir: Path, run_dir: Path, pyth
         print(f"Using cached augmented bundle at {generated_bundle}")
         return generated_bundle
 
-    print("Regenerating novel comparison bundle with AWFDRL and MAAFDRL coverage...")
+    print("Regenerating novel comparison bundle with LRU, LFU, Thompson, and MAAFDRL coverage...")
     generated_bundle.mkdir(parents=True, exist_ok=True)
     cmd = [
         python_bin,
@@ -381,12 +412,36 @@ def ensure_extended_bundle(data_dir: Path, output_dir: Path, run_dir: Path, pyth
         "8",
         "12",
         "16",
+        "--c-epsilon",
+        "0.18",
     ]
     subprocess.run(cmd, check=True)
     return generated_bundle
 
 
-def plot_related_work_bundle(data_dir: Path, out_root: Path, fmt: str) -> None:
+def load_related_episode_data(data_dir: Path) -> dict[str, list[dict[str, float]]]:
+    out: dict[str, list[dict[str, float]]] = {}
+    episode_csv = data_dir / "related_work_compare" / "episode_metrics.csv"
+    if not episode_csv.exists():
+        return out
+    for row in load_csv(episode_csv):
+        name = map_name(row["scheme"])
+        if name is None:
+            continue
+        out.setdefault(name, []).append(
+            {
+                "episode": float(row["episode"]),
+                "reward": float(row["reward"]),
+                "local_hit_rate": float(row["local_hit_rate"]),
+                "neighbor_fetch_rate": float(row["neighbor_fetch_rate"]),
+                "cloud_fetch_rate": float(row["cloud_fetch_rate"]),
+                "paper_hit_rate": float(row["paper_hit_rate"]),
+            }
+        )
+    return out
+
+
+def plot_related_work_bundle(data_dir: Path, out_root: Path, fmt: str, allowed_model) -> None:
     print("\n[1/8] related_work_compare")
     out_dir = out_root / "related_work_compare"
     summary_csv = data_dir / "related_work_compare" / "summary.csv"
@@ -399,7 +454,7 @@ def plot_related_work_bundle(data_dir: Path, out_root: Path, fmt: str) -> None:
     scheme_data: dict[str, dict[str, float]] = {}
     for row in load_csv(summary_csv):
         name = map_name(row["scheme"])
-        if name is None:
+        if name is None or not allowed_model(name):
             continue
         scheme_data[name] = {
             "reward_mean": float(row["reward_mean"]),
@@ -409,7 +464,7 @@ def plot_related_work_bundle(data_dir: Path, out_root: Path, fmt: str) -> None:
         }
 
     for name, metrics in parse_summary_txt(main_dir / "summary.txt").items():
-        if name in scheme_data:
+        if name in scheme_data or not allowed_model(name):
             continue
         scheme_data[name] = {
             "reward_mean": metrics.get("reward_mean", 0.0),
@@ -438,7 +493,7 @@ def plot_related_work_bundle(data_dir: Path, out_root: Path, fmt: str) -> None:
     if episode_csv.exists():
         for row in load_csv(episode_csv):
             name = map_name(row["scheme"])
-            if name is None:
+            if name is None or not allowed_model(name):
                 continue
             episode_data.setdefault(name, []).append(
                 {
@@ -454,7 +509,7 @@ def plot_related_work_bundle(data_dir: Path, out_root: Path, fmt: str) -> None:
         ("temporal_graph_eval.csv", "TemporalGraph"),
     ]:
         path = main_dir / filename
-        if path.exists() and name not in episode_data:
+        if path.exists() and name not in episode_data and allowed_model(name):
             episode_data[name] = [
                 {
                     "episode": row["episode"],
@@ -498,7 +553,7 @@ def plot_related_work_bundle(data_dir: Path, out_root: Path, fmt: str) -> None:
         save_fig(fig, ext_path(out_dir, stem, fmt))
 
 
-def plot_novel_comparison_bundle(bundle_dir: Path, out_root: Path, fmt: str) -> None:
+def plot_novel_comparison_bundle(bundle_dir: Path, out_root: Path, fmt: str, allowed_model) -> None:
     print("\n[2/8] novel_comparison_bundle")
     out_dir = out_root / "novel_comparison_bundle"
     capacity_rows = load_csv(bundle_dir / "capacity_sweep.csv")
@@ -516,7 +571,7 @@ def plot_novel_comparison_bundle(bundle_dir: Path, out_root: Path, fmt: str) -> 
         series: dict[str, list[float]] = {}
         for row in capacity_rows:
             name = map_name(row["model"])
-            if name is None:
+            if name is None or not allowed_model(name):
                 continue
             series.setdefault(name, []).append(float(row[metric]))
         line_plot(
@@ -537,7 +592,7 @@ def plot_novel_comparison_bundle(bundle_dir: Path, out_root: Path, fmt: str) -> 
         series: dict[str, list[float]] = {}
         for row in sbs_rows:
             name = map_name(row["model"])
-            if name is None:
+            if name is None or not allowed_model(name):
                 continue
             series.setdefault(name, []).append(float(row[metric]))
         line_plot(
@@ -550,8 +605,15 @@ def plot_novel_comparison_bundle(bundle_dir: Path, out_root: Path, fmt: str) -> 
             integer_x=True,
         )
 
-    ordered = ordered_names([map_name(row["model"]) for row in cost_rows if map_name(row["model"]) is not None], include_teacher=False)
-    cost_map = {map_name(row["model"]): row for row in cost_rows if map_name(row["model"]) is not None}
+    ordered = ordered_names(
+        [map_name(row["model"]) for row in cost_rows if map_name(row["model"]) is not None and allowed_model(map_name(row["model"]))],
+        include_teacher=False,
+    )
+    cost_map = {
+        map_name(row["model"]): row
+        for row in cost_rows
+        if map_name(row["model"]) is not None and allowed_model(map_name(row["model"]))
+    }
     stacked_bar_plot(
         ordered,
         [
@@ -569,14 +631,16 @@ def plot_novel_comparison_bundle(bundle_dir: Path, out_root: Path, fmt: str) -> 
         "Random": "random_trace.csv",
         "BSG": "bsg_trace.csv",
         "C-ε-greedy": "c_epsilon_trace.csv",
-        "AWFDRL": "awfdrl_trace.csv",
+        "LRU": "lru_trace.csv",
+        "LFU": "lfu_trace.csv",
+        "Thompson": "thompson_trace.csv",
         "MAAFDRL": "maafdrl_trace.csv",
         "TemporalGraph": "temporal_graph_trace.csv",
     }
     traces = {
         scheme: load_float_csv(bundle_dir / filename)
         for scheme, filename in trace_files.items()
-        if (bundle_dir / filename).exists()
+        if (bundle_dir / filename).exists() and allowed_model(scheme)
     }
     if traces:
         fig, axes = plt.subplots(1, 2, figsize=(11.6, 4.6))
@@ -613,14 +677,16 @@ def plot_novel_comparison_bundle(bundle_dir: Path, out_root: Path, fmt: str) -> 
         "Random": "burst_random.csv",
         "BSG": "burst_bsg.csv",
         "C-ε-greedy": "burst_c_epsilon.csv",
-        "AWFDRL": "burst_awfdrl.csv",
+        "LRU": "burst_lru.csv",
+        "LFU": "burst_lfu.csv",
+        "Thompson": "burst_thompson.csv",
         "MAAFDRL": "burst_maafdrl.csv",
         "TemporalGraph": "burst_temporal_graph.csv",
     }
     burst_traces = {
         scheme: load_float_csv(bundle_dir / filename)
         for scheme, filename in burst_files.items()
-        if (bundle_dir / filename).exists()
+        if (bundle_dir / filename).exists() and allowed_model(scheme)
     }
     if burst_traces:
         fig, axes = plt.subplots(1, 2, figsize=(11.8, 4.6))
@@ -715,7 +781,7 @@ def plot_episode_epoch_bundle(main_dir: Path, out_root: Path, fmt: str) -> None:
     )
 
 
-def plot_final_no_teacher_bundle(main_dir: Path, out_root: Path, fmt: str) -> None:
+def plot_final_no_teacher_bundle(data_dir: Path, main_dir: Path, out_root: Path, fmt: str, allowed_model) -> None:
     print("\n[4/8] final_no_teacher_bundle")
     out_dir = out_root / "final_no_teacher_bundle"
     rows_by_model = {
@@ -723,6 +789,13 @@ def plot_final_no_teacher_bundle(main_dir: Path, out_root: Path, fmt: str) -> No
         "BSG": load_float_csv(main_dir / "bsg_like_eval.csv"),
         "C-ε-greedy": load_float_csv(main_dir / "c_epsilon_greedy_eval.csv"),
         "TemporalGraph": load_float_csv(main_dir / "temporal_graph_eval.csv"),
+    }
+    for name, rows in load_related_episode_data(data_dir).items():
+        rows_by_model.setdefault(name, rows)
+    rows_by_model = {
+        name: rows_by_model[name]
+        for name in ordered_names(list(rows_by_model.keys()), include_teacher=False)
+        if rows_by_model[name] and allowed_model(name)
     }
 
     def metric_mean(name: str, metric: str) -> float:
@@ -774,7 +847,7 @@ def plot_final_no_teacher_bundle(main_dir: Path, out_root: Path, fmt: str) -> No
 
     tg_edge = metric_mean("TemporalGraph", "paper_hit_rate")
     gains = {}
-    for name in ["Random", "BSG", "C-ε-greedy"]:
+    for name in [name for name in ordered if name != "TemporalGraph"]:
         base = metric_mean(name, "paper_hit_rate")
         gains[name] = 100.0 * (tg_edge - base) / max(base, 1e-8)
     bar_plot(gains, "Gain (%)", ext_path(out_dir, "edge_hit_gain_no_teacher", fmt), "TemporalGraph Edge-Hit Gain Over Baselines", include_teacher=False, fmt=".1f")
@@ -805,12 +878,27 @@ def plot_final_no_teacher_bundle(main_dir: Path, out_root: Path, fmt: str) -> No
     )
 
 
-def plot_temporalgraph_showcase_bundle(main_dir: Path, out_root: Path, fmt: str) -> None:
+def plot_temporalgraph_showcase_bundle(data_dir: Path, main_dir: Path, out_root: Path, fmt: str, allowed_model) -> None:
     print("\n[5/8] temporalgraph_showcase")
     out_dir = out_root / "temporalgraph_showcase"
     summary = parse_summary_txt(main_dir / "summary.txt")
     summary.pop("Teacher", None)
-    comparison = {name: values for name, values in summary.items() if name in {"TemporalGraph", "Random", "BSG", "C-ε-greedy"}}
+    rw_summary = data_dir / "related_work_compare" / "summary.csv"
+    if rw_summary.exists():
+        for row in load_csv(rw_summary):
+            name = map_name(row["scheme"])
+            if name is None or name in summary or not allowed_model(name):
+                continue
+            summary[name] = {
+                "reward_mean": float(row["reward_mean"]),
+                "local_hit_mean": float(row["local_hit_mean"]),
+                "paper_hit_mean": float(row["paper_hit_mean"]),
+            }
+    comparison = {
+        name: values
+        for name, values in summary.items()
+        if name in {"TemporalGraph", "Random", "BSG", "C-ε-greedy", "LRU", "LFU", "Thompson", "MAAFDRL"} and allowed_model(name)
+    }
     if not comparison:
         return
 
@@ -1042,14 +1130,14 @@ def plot_clustered_latency_bundle(data_dir: Path, out_root: Path, fmt: str) -> N
     save_fig(fig, ext_path(out_dir, "latency_reduction_vs_n_sbs", fmt))
 
 
-def plot_consolidated_summary(data_dir: Path, out_root: Path, fmt: str) -> None:
+def plot_consolidated_summary(data_dir: Path, out_root: Path, fmt: str, allowed_model) -> None:
     print("\n[8/8] consolidated_summary")
     scheme_metrics: dict[str, dict[str, float]] = {}
     rw_summary = data_dir / "related_work_compare" / "summary.csv"
     if rw_summary.exists():
         for row in load_csv(rw_summary):
             name = map_name(row["scheme"])
-            if name is None:
+            if name is None or not allowed_model(name):
                 continue
             scheme_metrics[name] = {
                 "reward": float(row["reward_mean"]),
@@ -1058,7 +1146,7 @@ def plot_consolidated_summary(data_dir: Path, out_root: Path, fmt: str) -> None:
                 "cloud_fetch": float(row["cloud_fetch_mean"]),
             }
     for name, metrics in parse_summary_txt(data_dir / "novel_realworld_main" / "summary.txt").items():
-        if name in scheme_metrics:
+        if name in scheme_metrics or not allowed_model(name):
             continue
         scheme_metrics[name] = {
             "reward": metrics.get("reward_mean", 0.0),
@@ -1099,6 +1187,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--output-dir", type=Path, default=Path("outputs/plots_apr11"))
     p.add_argument("--format", type=str, default="pdf", choices=["pdf", "png", "svg", "eps"])
     p.add_argument("--python-bin", type=str, default=sys.executable)
+    p.add_argument("--include-models", nargs="*", default=[])
+    p.add_argument("--exclude-models", nargs="*", default=[])
     return p.parse_args()
 
 
@@ -1124,14 +1214,16 @@ def main() -> None:
 
     bundle_dir = ensure_extended_bundle(data_dir, output_dir, run_dir, args.python_bin)
 
-    plot_related_work_bundle(data_dir, output_dir, args.format)
-    plot_novel_comparison_bundle(bundle_dir, output_dir, args.format)
+    allowed_model = build_model_filter(args.include_models, args.exclude_models)
+
+    plot_related_work_bundle(data_dir, output_dir, args.format, allowed_model)
+    plot_novel_comparison_bundle(bundle_dir, output_dir, args.format, allowed_model)
     plot_episode_epoch_bundle(run_dir, output_dir, args.format)
-    plot_final_no_teacher_bundle(run_dir, output_dir, args.format)
-    plot_temporalgraph_showcase_bundle(run_dir, output_dir, args.format)
+    plot_final_no_teacher_bundle(data_dir, run_dir, output_dir, args.format, allowed_model)
+    plot_temporalgraph_showcase_bundle(data_dir, run_dir, output_dir, args.format, allowed_model)
     plot_static_vs_dynamic_bundle(data_dir, output_dir, args.format)
     plot_clustered_latency_bundle(data_dir, output_dir, args.format)
-    plot_consolidated_summary(data_dir, output_dir, args.format)
+    plot_consolidated_summary(data_dir, output_dir, args.format, allowed_model)
 
     print("=" * 60)
     print(f"All apr11 plots saved under: {output_dir}")

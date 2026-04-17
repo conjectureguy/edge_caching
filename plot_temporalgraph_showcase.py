@@ -18,21 +18,45 @@ SUMMARY_RE = re.compile(
 
 RELATED_NAME_MAP = {
     "Our-TemporalGraph": "TemporalGraph",
-    "Paper2-AWFDRL-like": "AWFDRL",
     "Paper3-MAAFDRL-like": "MAAFDRL",
-    "Paper4-DTS-DDPG-like": "DTS-DDPG",
+    "TemporalGraph": "TemporalGraph",
+    "MAAFDRL": "MAAFDRL",
+    "LRU": "LRU",
+    "LFU": "LFU",
+    "Thompson": "Thompson",
+    "Paper2-AWFDRL-like": None,
+    "Paper4-DTS-DDPG-like": None,
 }
 
 COLOR_MAP = {
     "TemporalGraph": "#d62828",
-    "Teacher": "#f4a261",
     "Random": "#6c757d",
     "BSG-like": "#8d99ae",
     "C-epsilon-greedy": "#457b9d",
-    "AWFDRL": "#1d3557",
+    "LRU": "#577590",
+    "LFU": "#4d908e",
+    "Thompson": "#7b2cbf",
     "MAAFDRL": "#2a9d8f",
-    "DTS-DDPG": "#7b2cbf",
 }
+
+
+def _normalize_model_name(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", name.lower())
+
+
+def _build_model_filter(include_models: list[str], exclude_models: list[str]):
+    include = {_normalize_model_name(name) for name in include_models}
+    exclude = {_normalize_model_name(name) for name in exclude_models}
+
+    def _allowed(name: str) -> bool:
+        normalized = _normalize_model_name(name)
+        if include and normalized not in include:
+            return False
+        if normalized in exclude:
+            return False
+        return True
+
+    return _allowed
 
 
 def parse_args() -> argparse.Namespace:
@@ -63,14 +87,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--exclude-teacher",
         action="store_true",
-        help="Exclude the Teacher heuristic from summary comparison plots.",
+        help="Deprecated no-op. Teacher is always excluded from showcase comparison plots.",
     )
     parser.add_argument(
         "--related-work-dir",
         type=Path,
         default=None,
-        help="Optional related_work_compare directory used to add AWFDRL/MAAFDRL/DTS-DDPG to showcase bars.",
+        help="Optional related_work_compare directory used to add MAAFDRL, LRU, LFU, and Thompson to showcase bars.",
     )
+    parser.add_argument("--include-models", nargs="*", default=[])
+    parser.add_argument("--exclude-models", nargs="*", default=[])
     return parser.parse_args()
 
 
@@ -110,7 +136,7 @@ def load_related_summary(path: Path | None) -> list[dict[str, float | str]]:
     with summary_csv.open() as f:
         reader = csv.DictReader(f)
         for row in reader:
-            name = RELATED_NAME_MAP.get(row["scheme"])
+            name = RELATED_NAME_MAP.get(row["scheme"], row["scheme"])
             if name is None:
                 continue
             rows.append(
@@ -124,13 +150,13 @@ def load_related_summary(path: Path | None) -> list[dict[str, float | str]]:
     return rows
 
 
-def merge_summaries(primary: list[dict[str, float | str]], related: list[dict[str, float | str]]) -> list[dict[str, float | str]]:
+def merge_summaries(primary: list[dict[str, float | str]], related: list[dict[str, float | str]], allowed_model) -> list[dict[str, float | str]]:
     merged = {str(row["name"]): row for row in primary}
     for row in related:
         merged.setdefault(str(row["name"]), row)
-    order = ["Random", "BSG-like", "C-epsilon-greedy", "Teacher", "AWFDRL", "MAAFDRL", "DTS-DDPG", "TemporalGraph"]
-    out = [merged[name] for name in order if name in merged]
-    out.extend(row for name, row in merged.items() if name not in order)
+    order = ["Random", "BSG-like", "C-epsilon-greedy", "LRU", "LFU", "Thompson", "MAAFDRL", "TemporalGraph"]
+    out = [merged[name] for name in order if name in merged and allowed_model(name)]
+    out.extend(row for name, row in merged.items() if name not in order and allowed_model(name))
     return out
 
 
@@ -249,15 +275,16 @@ def plot_eval_episodes(rows: list[dict[str, float]], out_path: Path) -> None:
 def main() -> None:
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    allowed_model = _build_model_filter(args.include_models, args.exclude_models)
 
     primary_summary = merge_summaries(
         load_summary(args.primary_run / "summary.txt"),
         load_related_summary(detect_related_work_dir(args.primary_run, args.related_work_dir)),
+        allowed_model,
     )
     secondary_summary = load_summary(args.secondary_run / "summary.txt")
-    if args.exclude_teacher:
-        primary_summary = [row for row in primary_summary if row["name"] != "Teacher"]
-        secondary_summary = [row for row in secondary_summary if row["name"] != "Teacher"]
+    primary_summary = [row for row in primary_summary if row["name"] != "Teacher" and allowed_model(str(row["name"]))]
+    secondary_summary = [row for row in secondary_summary if row["name"] != "Teacher" and allowed_model(str(row["name"]))]
     primary_imitation = load_csv_rows(args.primary_run / "policy_imitation.csv")
     primary_eval = load_csv_rows(args.primary_run / "temporal_graph_eval.csv")
 

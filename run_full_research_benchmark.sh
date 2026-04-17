@@ -10,6 +10,22 @@ DATASET_NAME="${DATASET_NAME:-ml-1m}"
 ROOT_BASE="${ROOT_BASE:-outputs/research_benchmark_runs}"
 RUN_TAG="${RUN_TAG:-$(date +%Y%m%d_%H%M%S)}"
 FAIL_IF_OURS_NOT_BEST="${FAIL_IF_OURS_NOT_BEST:-0}"
+C_EPSILON="${C_EPSILON:-0.18}"
+PLOT_INCLUDE_MODELS="${PLOT_INCLUDE_MODELS:-TemporalGraph,MAAFDRL,Thompson,LFU,LRU,C-epsilon-greedy,BSG-like,Random}"
+PLOT_EXCLUDE_MODELS="${PLOT_EXCLUDE_MODELS:-}"
+
+FED_ROUNDS="${FED_ROUNDS:-24}"
+CLIENTS_PER_ROUND="${CLIENTS_PER_ROUND:-160}"
+TEMPORAL_BATCH_SIZE="${TEMPORAL_BATCH_SIZE:-256}"
+IMITATION_EPOCHS="${IMITATION_EPOCHS:-60}"
+EPISODES_PER_EPOCH="${EPISODES_PER_EPOCH:-16}"
+CHECKPOINT_EVAL_EPISODES="${CHECKPOINT_EVAL_EPISODES:-10}"
+REINFORCE_EPOCHS="${REINFORCE_EPOCHS:-12}"
+REINFORCE_EPISODES_PER_EPOCH="${REINFORCE_EPISODES_PER_EPOCH:-8}"
+EVAL_EPISODES="${EVAL_EPISODES:-20}"
+RELATED_WORK_EVAL_EPISODES="${RELATED_WORK_EVAL_EPISODES:-20}"
+COMPARISON_EVAL_EPISODES="${COMPARISON_EVAL_EPISODES:-16}"
+COMPARISON_EPISODE_LEN="${COMPARISON_EPISODE_LEN:-80}"
 
 ROOT="${ROOT_BASE}/temporalgraph_${RUN_TAG}"
 RUN_DIR="${ROOT}/novel_realworld_main"
@@ -28,12 +44,40 @@ LATEST_LINK="${ROOT_BASE}/latest"
 mkdir -p "${ROOT_BASE}" "${ROOT}"
 ln -sfn "$(basename "${ROOT}")" "${LATEST_LINK}"
 
+csv_to_arg_array() {
+  local flag="$1"
+  local csv="$2"
+  local -n out_ref="$3"
+  out_ref=()
+  if [[ -z "${csv}" ]]; then
+    return
+  fi
+  csv="${csv//,/ }"
+  # shellcheck disable=SC2206
+  local values=( ${csv} )
+  if [[ ${#values[@]} -gt 0 ]]; then
+    out_ref=("${flag}" "${values[@]}")
+  fi
+}
+
+PLOT_INCLUDE_ARGS=()
+PLOT_EXCLUDE_ARGS=()
+csv_to_arg_array "--include-models" "${PLOT_INCLUDE_MODELS}" PLOT_INCLUDE_ARGS
+csv_to_arg_array "--exclude-models" "${PLOT_EXCLUDE_MODELS}" PLOT_EXCLUDE_ARGS
+
 echo "============================================================"
 echo "TemporalGraph full benchmark run"
 echo "Repo root   : ${REPO_ROOT}"
 echo "Python      : ${PYTHON_BIN}"
 echo "Device      : ${DEVICE}"
 echo "Dataset     : ${DATASET_NAME}"
+echo "C-epsilon   : ${C_EPSILON}"
+echo "Plot include: ${PLOT_INCLUDE_MODELS}"
+echo "Plot exclude: ${PLOT_EXCLUDE_MODELS:-<none>}"
+echo "Fed rounds  : ${FED_ROUNDS}"
+echo "Imit epochs : ${IMITATION_EPOCHS}"
+echo "RL epochs   : ${REINFORCE_EPOCHS}"
+echo "Eval eps    : ${EVAL_EPISODES}"
 echo "Output root : ${ROOT}"
 echo "============================================================"
 
@@ -59,10 +103,10 @@ echo "[1/9] Training Temporal Encoder + Elastic FL + GNN policy"
   --embed-dim 64 \
   --hidden-dim 128 \
   --num-heads 4 \
-  --fed-rounds 18 \
-  --clients-per-round 120 \
+  --fed-rounds "${FED_ROUNDS}" \
+  --clients-per-round "${CLIENTS_PER_ROUND}" \
   --local-epochs 1 \
-  --temporal-batch-size 128 \
+  --temporal-batch-size "${TEMPORAL_BATCH_SIZE}" \
   --temporal-lr 0.0007 \
   --temporal-weight-decay 0.00001 \
   --elastic-tau 2.0 \
@@ -77,8 +121,8 @@ echo "[1/9] Training Temporal Encoder + Elastic FL + GNN policy"
   --episode-len 120 \
   --grid-size 300 \
   --policy-hidden-dim 160 \
-  --imitation-epochs 40 \
-  --episodes-per-epoch 10 \
+  --imitation-epochs "${IMITATION_EPOCHS}" \
+  --episodes-per-epoch "${EPISODES_PER_EPOCH}" \
   --policy-lr 0.0002 \
   --teacher-forcing-prob 0.90 \
   --teacher-forcing-final-prob 0.05 \
@@ -96,9 +140,13 @@ echo "[1/9] Training Temporal Encoder + Elastic FL + GNN policy"
   --semantic-score-weight 0.10 \
   --semantic-future-weight 0.05 \
   --freshness-score-weight 0.08 \
-  --checkpoint-eval-episodes 6 \
-  --reinforce-epochs 15 \
-  --eval-episodes 10 \
+  --checkpoint-eval-episodes "${CHECKPOINT_EVAL_EPISODES}" \
+  --reinforce-epochs "${REINFORCE_EPOCHS}" \
+  --reinforce-episodes-per-epoch "${REINFORCE_EPISODES_PER_EPOCH}" \
+  --reinforce-lr 0.00005 \
+  --reinforce-teacher-anchor-weight 0.12 \
+  --eval-episodes "${EVAL_EPISODES}" \
+  --c-epsilon-eval "${C_EPSILON}" \
   --seed 42 \
   --log-level INFO \
   --log-every-imitation-epoch 1 \
@@ -111,7 +159,7 @@ echo "[2/9] Running related-work benchmark"
   --output-dir "${RELATED_WORK_DIR}" \
   --dataset-name "${DATASET_NAME}" \
   --device "${DEVICE}" \
-  --eval-episodes 10 \
+  --eval-episodes "${RELATED_WORK_EVAL_EPISODES}" \
   --episode-len 120 \
   --n-sbs 8 \
   --n-ues 220 \
@@ -130,7 +178,9 @@ echo "[3/9] Regenerating main-run summary plots for the final model comparisons"
 "${PYTHON_BIN}" plot_novel_realworld_results.py \
   --input-dir "${RUN_DIR}" \
   --output-dir "${RUN_DIR}" \
-  --related-work-dir "${RELATED_WORK_DIR}"
+  --related-work-dir "${RELATED_WORK_DIR}" \
+  "${PLOT_INCLUDE_ARGS[@]}" \
+  "${PLOT_EXCLUDE_ARGS[@]}"
 
 echo "[4/9] Episode/epoch curves"
 "${PYTHON_BIN}" plot_episode_epoch_curves.py \
@@ -150,23 +200,30 @@ echo "[6/9] Showcase and no-teacher bundles"
   --output-dir "${SHOWCASE_DIR}" \
   --related-work-dir "${RELATED_WORK_DIR}" \
   --exclude-teacher \
-  --skip-secondary
+  --skip-secondary \
+  "${PLOT_INCLUDE_ARGS[@]}" \
+  "${PLOT_EXCLUDE_ARGS[@]}"
 
 "${PYTHON_BIN}" plot_final_no_teacher_bundle.py \
   --input-dir "${RUN_DIR}" \
   --output-dir "${FINAL_NO_TEACHER_DIR}" \
-  --related-work-dir "${RELATED_WORK_DIR}"
+  --related-work-dir "${RELATED_WORK_DIR}" \
+  "${PLOT_INCLUDE_ARGS[@]}" \
+  "${PLOT_EXCLUDE_ARGS[@]}"
 
 echo "[7/9] Extended comparison bundle"
 "${PYTHON_BIN}" plot_novel_comparison_bundle.py \
   --run-dir "${RUN_DIR}" \
   --output-dir "${COMPARISON_BUNDLE_DIR}" \
   --device "${DEVICE}" \
-  --eval-episodes 10 \
-  --episode-len 60 \
+  --eval-episodes "${COMPARISON_EVAL_EPISODES}" \
+  --episode-len "${COMPARISON_EPISODE_LEN}" \
   --n-ues 220 \
   --cache-capacities 10 20 30 \
-  --sbs-list 8 12 16
+  --sbs-list 8 12 16 \
+  --c-epsilon "${C_EPSILON}" \
+  "${PLOT_INCLUDE_ARGS[@]}" \
+  "${PLOT_EXCLUDE_ARGS[@]}"
 
 echo "[8/9] Paper-ready PDF bundle"
 "${PYTHON_BIN}" generate_plots_apr11.py \
@@ -175,7 +232,9 @@ echo "[8/9] Paper-ready PDF bundle"
   --run-dir "${RUN_DIR}" \
   --output-dir "${PAPER_READY_DIR}" \
   --format pdf \
-  --python-bin "${PYTHON_BIN}"
+  --python-bin "${PYTHON_BIN}" \
+  "${PLOT_INCLUDE_ARGS[@]}" \
+  "${PLOT_EXCLUDE_ARGS[@]}"
 
 echo "[9/9] Writing benchmark report and manifest"
 "${PYTHON_BIN}" - "${RELATED_WORK_DIR}/summary.csv" "${REPORT_PATH}" "${FAIL_IF_OURS_NOT_BEST}" <<'PY'

@@ -97,13 +97,25 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--log-every-imitation-episode", type=int, default=1)
     p.add_argument("--reinforce-epochs", type=int, default=0)
     p.add_argument("--reinforce-episodes-per-epoch", type=int, default=4)
-    p.add_argument("--reinforce-lr", type=float, default=1e-4)
+    p.add_argument("--reinforce-lr", type=float, default=5e-5)
     p.add_argument("--reinforce-gamma", type=float, default=0.99)
     p.add_argument("--reinforce-entropy-weight", type=float, default=1e-3)
+    p.add_argument(
+        "--reinforce-teacher-anchor-weight",
+        type=float,
+        default=0.12,
+        help="Auxiliary teacher-alignment weight applied during RL fine-tuning.",
+    )
     p.add_argument("--log-every-reinforce-epoch", type=int, default=1)
     p.add_argument("--log-every-reinforce-episode", type=int, default=1)
 
     p.add_argument("--eval-episodes", type=int, default=5)
+    p.add_argument(
+        "--c-epsilon-eval",
+        type=float,
+        default=0.18,
+        help="Exploration rate used when evaluating the C-epsilon-greedy baseline.",
+    )
     return p.parse_args()
 
 
@@ -245,7 +257,7 @@ def eval_bsg(env: NovelRealWorldCachingEnv, episodes: int, seed: int) -> list[di
     return rows
 
 
-def eval_c_epsilon_greedy(env: NovelRealWorldCachingEnv, episodes: int, seed: int, epsilon: float = 0.1) -> list[dict[str, float]]:
+def eval_c_epsilon_greedy(env: NovelRealWorldCachingEnv, episodes: int, seed: int, epsilon: float = 0.18) -> list[dict[str, float]]:
     rows = []
     rng = np.random.default_rng(seed)
     universe = np.arange(1, env.num_items + 1, dtype=np.int64)
@@ -493,6 +505,7 @@ def main() -> None:
             device=args.device,
             decode_diversity_penalty=args.decode_diversity_penalty,
             teacher_guidance_weight=args.teacher_guidance_weight,
+            teacher_anchor_weight=args.reinforce_teacher_anchor_weight,
             placement_interval=args.placement_interval,
             checkpoint_eval_episodes=args.checkpoint_eval_episodes,
         )
@@ -516,7 +529,12 @@ def main() -> None:
     logger.info("Evaluating BSG-like baseline")
     bsg_rows = eval_bsg(env, args.eval_episodes, seed=args.seed + 1500)
     logger.info("Evaluating C-epsilon-greedy baseline")
-    c_eps_rows = eval_c_epsilon_greedy(env, args.eval_episodes, seed=args.seed + 1750)
+    c_eps_rows = eval_c_epsilon_greedy(
+        env,
+        args.eval_episodes,
+        seed=args.seed + 1750,
+        epsilon=args.c_epsilon_eval,
+    )
     logger.info("Evaluating cooperative teacher")
     teacher_rows = eval_teacher(env, args.eval_episodes, seed=args.seed + 2000)
     logger.info("Evaluating learned graph policy")

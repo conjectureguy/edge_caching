@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import re
 from pathlib import Path
 
 import matplotlib
@@ -15,27 +16,64 @@ DISPLAY_NAMES = {
     "random": "Random",
     "bsg_like": "BSG-like",
     "c_epsilon_greedy": "C-epsilon-greedy",
+    "lru": "LRU",
+    "lfu": "LFU",
+    "thompson": "Thompson",
     "temporal_graph": "TemporalGraph",
-    "awfdrl": "AWFDRL",
     "maafdrl": "MAAFDRL",
-    "dts_ddpg": "DTS-DDPG",
 }
 
 COLORS = {
     "random": "#6c757d",
     "bsg_like": "#8d99ae",
     "c_epsilon_greedy": "#457b9d",
+    "lru": "#577590",
+    "lfu": "#4d908e",
+    "thompson": "#7b2cbf",
     "temporal_graph": "#d62828",
-    "awfdrl": "#1d3557",
     "maafdrl": "#2a9d8f",
-    "dts_ddpg": "#7b2cbf",
 }
 
 RELATED_NAME_MAP = {
-    "Paper2-AWFDRL-like": "awfdrl",
     "Paper3-MAAFDRL-like": "maafdrl",
-    "Paper4-DTS-DDPG-like": "dts_ddpg",
+    "MAAFDRL": "maafdrl",
+    "LRU": "lru",
+    "LFU": "lfu",
+    "Thompson": "thompson",
+    "Paper2-AWFDRL-like": None,
+    "Paper4-DTS-DDPG-like": None,
 }
+
+MODEL_ORDER = [
+    "random",
+    "bsg_like",
+    "c_epsilon_greedy",
+    "lru",
+    "lfu",
+    "thompson",
+    "maafdrl",
+    "temporal_graph",
+]
+
+
+def _normalize_model_name(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", name.lower())
+
+
+def _build_model_filter(include_models: list[str], exclude_models: list[str]):
+    include = {_normalize_model_name(name) for name in include_models}
+    exclude = {_normalize_model_name(name) for name in exclude_models}
+
+    def _allowed(model_key: str) -> bool:
+        display = DISPLAY_NAMES.get(model_key, model_key)
+        normalized = _normalize_model_name(display)
+        if include and normalized not in include:
+            return False
+        if normalized in exclude:
+            return False
+        return True
+
+    return _allowed
 
 
 def parse_args() -> argparse.Namespace:
@@ -43,6 +81,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--input-dir", type=Path, default=Path("outputs/novel_realworld_ml1m_final"))
     p.add_argument("--output-dir", type=Path, default=Path("outputs/final_no_teacher_bundle"))
     p.add_argument("--related-work-dir", type=Path, default=None)
+    p.add_argument("--include-models", nargs="*", default=[])
+    p.add_argument("--exclude-models", nargs="*", default=[])
     return p.parse_args()
 
 
@@ -59,7 +99,7 @@ def detect_related_work_dir(input_dir: Path, related_work_dir: Path | None) -> P
     return candidate if candidate.exists() else None
 
 
-def model_rows(input_dir: Path, related_work_dir: Path | None) -> dict[str, list[dict[str, float]]]:
+def model_rows(input_dir: Path, related_work_dir: Path | None, allowed_model) -> dict[str, list[dict[str, float]]]:
     rows_by_model: dict[str, list[dict[str, float]]] = {
         "random": load_eval_csv(input_dir / "random_eval.csv"),
         "bsg_like": load_eval_csv(input_dir / "bsg_like_eval.csv"),
@@ -75,12 +115,16 @@ def model_rows(input_dir: Path, related_work_dir: Path | None) -> dict[str, list
         reader = csv.DictReader(f)
         grouped: dict[str, list[dict[str, float]]] = {}
         for row in reader:
-            key = RELATED_NAME_MAP.get(row["scheme"])
+            key = RELATED_NAME_MAP.get(row["scheme"], row["scheme"].lower().replace("-", "_"))
             if key is None:
                 continue
             grouped.setdefault(key, []).append({k: float(v) for k, v in row.items() if k != "scheme"})
         rows_by_model.update(grouped)
-    return rows_by_model
+    return {
+        model: rows_by_model[model]
+        for model in MODEL_ORDER
+        if model in rows_by_model and allowed_model(model)
+    }
 
 
 def metric_means(rows_by_model: dict[str, list[dict[str, float]]], metric: str) -> dict[str, float]:
@@ -227,7 +271,8 @@ def main() -> None:
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    rows_by_model = model_rows(args.input_dir, detect_related_work_dir(args.input_dir, args.related_work_dir))
+    allowed_model = _build_model_filter(args.include_models, args.exclude_models)
+    rows_by_model = model_rows(args.input_dir, detect_related_work_dir(args.input_dir, args.related_work_dir), allowed_model)
 
     bar_metric(rows_by_model, "reward", "Mean Reward Comparison", "Mean Episode Reward", args.output_dir / "reward_mean_no_teacher.png")
     bar_metric(rows_by_model, "paper_hit_rate", "Mean Paper-Hit Comparison", "Mean Paper-Hit Rate", args.output_dir / "paper_hit_mean_no_teacher.png")

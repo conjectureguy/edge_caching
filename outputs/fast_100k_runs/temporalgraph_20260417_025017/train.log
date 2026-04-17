@@ -1,0 +1,10 @@
+2026-04-17 02:50:21,046 | INFO | novel_realworld_cache | Stage 1/5: loading ml-100k
+2026-04-17 02:50:21,365 | INFO | novel_realworld_cache | Dataset ready | dataset=ml-100k ratings=100000 users=943
+2026-04-17 02:50:21,365 | INFO | novel_realworld_cache | Stage 2/5: building real-world timestamp-aware temporal dataset
+2026-04-17 02:50:23,651 | INFO | novel_realworld_cache | Temporal dataset ready | samples=92456 train=83642 val=8814
+2026-04-17 02:50:23,655 | INFO | novel_realworld_cache | Stage 3/5: elastic federated training for real-world temporal encoder
+2026-04-17 02:50:23,667 | INFO | novel_realworld_cache | Real-world temporal federated training started: rounds=3 clients_per_round=40 users=943
+/home/rahul/miniforge3/lib/python3.12/site-packages/torch/nn/modules/transformer.py:531: UserWarning: The PyTorch API of nested tensors is in prototype stage and will change in the near future. We recommend specifying layout=torch.jagged when constructing a nested tensor, as this layout receives active development, has better operator coverage, and works with torch.compile. (Triggered internally at /pytorch/aten/src/ATen/NestedTensorImpl.cpp:178.)
+  output = torch._nested_tensor_from_mask(
+2026-04-17 02:51:55,534 | INFO | novel_realworld_cache | Real-world temporal round 1/3 | train_loss=26.932750 val_loss=19.881970
+2026-04-17 02:52:49,665 | INFO | novel_realworld_cache | Real-world temporal round 2/3 | train_loss=25.362552 val_loss=19.152571

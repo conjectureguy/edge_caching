@@ -198,15 +198,14 @@ class ThompsonPolicy(BasePolicy):
     def update(self, obs: dict[str, np.ndarray], env: CooperativeCachingEnv, action: np.ndarray, demand: list[dict[int, int]]) -> None:
         assert self.alpha is not None and self.beta is not None
         for b in range(env.cfg.n_sbs):
-            total = sum(demand[b].values())
             for item in action[b]:
                 item = int(item)
                 if item <= 0:
                     continue
-                hits = float(demand[b].get(item, 0))
-                misses = float(max(0, total - hits))
-                self.alpha[b, item] += hits
-                self.beta[b, item] += misses
+                if demand[b].get(item, 0) > 0:
+                    self.alpha[b, item] += 1.0
+                else:
+                    self.beta[b, item] += 1.0
 
 
 class BSGPolicy(BasePolicy):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import re
 from pathlib import Path
 
 import matplotlib
@@ -15,30 +16,65 @@ DISPLAY_NAMES = {
     "Random": "Random",
     "BSG-like": "BSG-like",
     "C-epsilon-greedy": "C-epsilon-greedy",
-    "Teacher": "Teacher",
+    "LRU": "LRU",
+    "LFU": "LFU",
+    "Thompson": "Thompson",
     "TemporalGraph": "TemporalGraph",
-    "AWFDRL": "AWFDRL",
     "MAAFDRL": "MAAFDRL",
-    "DTS-DDPG": "DTS-DDPG",
 }
 
 COLORS = {
     "Random": "#8d99ae",
     "BSG-like": "#577590",
     "C-epsilon-greedy": "#90be6d",
-    "Teacher": "#f8961e",
+    "LRU": "#577590",
+    "LFU": "#4d908e",
+    "Thompson": "#7b2cbf",
     "TemporalGraph": "#d62828",
-    "AWFDRL": "#1d3557",
     "MAAFDRL": "#2a9d8f",
-    "DTS-DDPG": "#7b2cbf",
 }
 
 RELATED_NAME_MAP = {
     "Our-TemporalGraph": "TemporalGraph",
-    "Paper2-AWFDRL-like": "AWFDRL",
     "Paper3-MAAFDRL-like": "MAAFDRL",
-    "Paper4-DTS-DDPG-like": "DTS-DDPG",
+    "TemporalGraph": "TemporalGraph",
+    "MAAFDRL": "MAAFDRL",
+    "LRU": "LRU",
+    "LFU": "LFU",
+    "Thompson": "Thompson",
+    "Paper2-AWFDRL-like": None,
+    "Paper4-DTS-DDPG-like": None,
 }
+
+PLOT_ORDER = [
+    "Random",
+    "BSG-like",
+    "C-epsilon-greedy",
+    "LRU",
+    "LFU",
+    "Thompson",
+    "MAAFDRL",
+    "TemporalGraph",
+]
+
+
+def _normalize_model_name(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", name.lower())
+
+
+def _build_model_filter(include_models: list[str], exclude_models: list[str]):
+    include = {_normalize_model_name(name) for name in include_models}
+    exclude = {_normalize_model_name(name) for name in exclude_models}
+
+    def _allowed(name: str) -> bool:
+        normalized = _normalize_model_name(name)
+        if include and normalized not in include:
+            return False
+        if normalized in exclude:
+            return False
+        return True
+
+    return _allowed
 
 
 def parse_args() -> argparse.Namespace:
@@ -46,6 +82,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--input-dir", type=Path, required=True)
     p.add_argument("--output-dir", type=Path, default=None)
     p.add_argument("--related-work-dir", type=Path, default=None)
+    p.add_argument("--include-models", nargs="*", default=[])
+    p.add_argument("--exclude-models", nargs="*", default=[])
     return p.parse_args()
 
 
@@ -59,7 +97,6 @@ def available_eval_specs(input_dir: Path) -> list[tuple[str, str, str]]:
         ("random_eval.csv", "Random", "#8d99ae"),
         ("bsg_like_eval.csv", "BSG-like", "#577590"),
         ("c_epsilon_greedy_eval.csv", "C-epsilon-greedy", "#90be6d"),
-        ("teacher_eval.csv", "Teacher", "#f8961e"),
         ("temporal_graph_eval.csv", "TemporalGraph", "#d62828"),
     ]
     return [spec for spec in specs if (input_dir / spec[0]).exists()]
@@ -80,7 +117,7 @@ def load_related_summary(related_work_dir: Path | None) -> list[dict[str, float 
         return []
     rows: list[dict[str, float | str]] = []
     for row in read_csv(path):
-        name = RELATED_NAME_MAP.get(row["scheme"])
+        name = RELATED_NAME_MAP.get(row["scheme"], row["scheme"])
         if name is None:
             continue
         rows.append(
@@ -103,7 +140,7 @@ def load_related_episode_curves(related_work_dir: Path | None) -> list[tuple[lis
         return []
     grouped: dict[str, list[dict[str, str]]] = {}
     for row in read_csv(path):
-        name = RELATED_NAME_MAP.get(row["scheme"])
+        name = RELATED_NAME_MAP.get(row["scheme"], row["scheme"])
         if name is None:
             continue
         grouped.setdefault(name, []).append(
@@ -172,10 +209,8 @@ def maybe_plot_policy_imitation(input_dir: Path, output_dir: Path) -> None:
     plt.close(fig)
 
 
-def plot_eval_bars(input_dir: Path, output_dir: Path, related_work_dir: Path | None, include_teacher: bool = True) -> None:
+def plot_eval_bars(input_dir: Path, output_dir: Path, related_work_dir: Path | None, allowed_model) -> None:
     eval_files = [(filename, label) for filename, label, _ in available_eval_specs(input_dir)]
-    if not include_teacher:
-        eval_files = [(filename, label) for filename, label in eval_files if label != "Teacher"]
     summary: list[dict[str, float | str]] = []
     for filename, label in eval_files:
         path = input_dir / filename
@@ -194,14 +229,16 @@ def plot_eval_bars(input_dir: Path, output_dir: Path, related_work_dir: Path | N
     seen = {str(row["label"]) for row in summary}
     for row in load_related_summary(related_work_dir):
         label = str(row["label"])
-        if label in seen or (not include_teacher and label == "Teacher"):
+        if label in seen or label == "Teacher" or not allowed_model(label):
             continue
         summary.append(row)
         seen.add(label)
+    summary = [row for row in summary if allowed_model(str(row["label"]))]
 
     if not summary:
         return
 
+    summary.sort(key=lambda row: PLOT_ORDER.index(str(row["label"])) if str(row["label"]) in PLOT_ORDER else len(PLOT_ORDER))
     labels = [x["label"] for x in summary]
     x = np.arange(len(labels))
     bar_colors = [COLORS[str(label)] for label in labels]
@@ -226,23 +263,22 @@ def plot_eval_bars(input_dir: Path, output_dir: Path, related_work_dir: Path | N
     axes[2].grid(axis="y", alpha=0.25)
 
     plt.tight_layout()
-    suffix = "" if include_teacher else "_no_teacher"
-    plt.savefig(output_dir / f"baseline_comparison{suffix}.png", dpi=180)
+    plt.savefig(output_dir / "baseline_comparison.png", dpi=180)
+    plt.savefig(output_dir / "baseline_comparison_no_teacher.png", dpi=180)
     plt.close(fig)
 
 
-def plot_eval_episode_curves(input_dir: Path, output_dir: Path, related_work_dir: Path | None, include_teacher: bool = True) -> None:
+def plot_eval_episode_curves(input_dir: Path, output_dir: Path, related_work_dir: Path | None, allowed_model) -> None:
     eval_files = available_eval_specs(input_dir)
-    if not include_teacher:
-        eval_files = [spec for spec in eval_files if spec[1] != "Teacher"]
     available = []
     for filename, label, color in eval_files:
         path = input_dir / filename
-        if path.exists():
+        if path.exists() and allowed_model(label):
             available.append((read_csv(path), label, color))
-    available.extend(load_related_episode_curves(related_work_dir))
+    available.extend([entry for entry in load_related_episode_curves(related_work_dir) if allowed_model(entry[1])])
     if not available:
         return
+    available.sort(key=lambda item: PLOT_ORDER.index(item[1]) if item[1] in PLOT_ORDER else len(PLOT_ORDER))
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
     for rows, label, color in available:
@@ -262,8 +298,8 @@ def plot_eval_episode_curves(input_dir: Path, output_dir: Path, related_work_dir
     axes[1].legend()
 
     plt.tight_layout()
-    suffix = "" if include_teacher else "_no_teacher"
-    plt.savefig(output_dir / f"episode_curves{suffix}.png", dpi=180)
+    plt.savefig(output_dir / "episode_curves.png", dpi=180)
+    plt.savefig(output_dir / "episode_curves_no_teacher.png", dpi=180)
     plt.close(fig)
 
 
@@ -272,12 +308,11 @@ def main() -> None:
     output_dir = args.output_dir or args.input_dir
     output_dir.mkdir(parents=True, exist_ok=True)
     related_work_dir = detect_related_work_dir(args.input_dir, args.related_work_dir)
+    allowed_model = _build_model_filter(args.include_models, args.exclude_models)
     maybe_plot_temporal_training(args.input_dir, output_dir)
     maybe_plot_policy_imitation(args.input_dir, output_dir)
-    plot_eval_bars(args.input_dir, output_dir, related_work_dir, include_teacher=True)
-    plot_eval_bars(args.input_dir, output_dir, related_work_dir, include_teacher=False)
-    plot_eval_episode_curves(args.input_dir, output_dir, related_work_dir, include_teacher=True)
-    plot_eval_episode_curves(args.input_dir, output_dir, related_work_dir, include_teacher=False)
+    plot_eval_bars(args.input_dir, output_dir, related_work_dir, allowed_model)
+    plot_eval_episode_curves(args.input_dir, output_dir, related_work_dir, allowed_model)
     print(f"Saved plots under: {output_dir}")
 
 
