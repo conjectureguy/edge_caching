@@ -1,0 +1,6 @@
+Related-work summary file: outputs/research_benchmark_runs/temporalgraph_20260417_041129/related_work_compare/summary.csv
+Our reward_mean=2604.800000 | best=TemporalGraph
+Our local_hit_mean=0.323388 | best=TemporalGraph
+Our paper_hit_mean=0.503873 | best=TemporalGraph
+Our cloud_fetch_mean=0.495710 | best=TemporalGraph
+Ours best on all four summary metrics: yes
